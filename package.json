@@ -1,0 +1,12 @@
+{
+  "name": "peruibe-low-profile",
+  "version": "1.0.0",
+  "description": "PERUÍBE LOW PROFILE — Operação Agente Secreto",
+  "type": "module",
+  "private": true,
+  "engines": { "node": ">=22.13" },
+  "scripts": {
+    "start": "node server/index.js",
+    "test": "node --test --disable-warning=ExperimentalWarning test/*.test.js"
+  }
+}
