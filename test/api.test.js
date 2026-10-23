@@ -45,7 +45,7 @@ before(async () => {
 });
 after(() => app.close());
 
-test('login: senha errada, nome inexistente e rate limit', async () => {
+test('login: senha errada e nome inexistente', async () => {
   const c = client();
   assert.equal((await c.post('/api/login', { name: 'Baiano', password: 'errada' })).status, 401);
   assert.equal((await c.post('/api/login', { name: 'Zé Ninguém', password: 'x' })).status, 401);
@@ -242,4 +242,11 @@ test('senhas ficam hasheadas no banco (não em texto puro)', () => {
     assert.match(r.pw_hash, /^scrypt\$/);
     assert.ok(!plain.some((pw) => r.pw_hash.includes(pw) || r.pw_enc.includes(pw)));
   }
+});
+
+test('bloqueia login após muitas tentativas erradas', async () => {
+  const c = client();
+  let last;
+  for (let i = 0; i < 12; i++) last = await c.post('/api/login', { name: 'Baiano', password: `chute${i}` });
+  assert.equal(last.status, 429);
 });
