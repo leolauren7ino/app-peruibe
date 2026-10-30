@@ -44,6 +44,9 @@ export function authRoutes(router, { db, cfg, limiter }) {
     return { kind: session.kind };
   });
 
+  // checagem de saúde para plataformas de hospedagem e monitores de uptime
+  router.add('GET', '/api/health', () => ({ ok: true }));
+
   router.add('POST', '/api/logout', (ctx) => {
     destroySession(db, ctx.token);
     ctx.headers['Set-Cookie'] = 'sid=; HttpOnly; SameSite=Strict; Path=/; Max-Age=0';

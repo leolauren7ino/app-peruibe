@@ -37,3 +37,16 @@ Banco da versão anterior? Ao subir, ele é migrado sozinho (agentes e senhas pr
 
 ## Novas missões/agentes (sem rebuild)
 Painel admin → **Missões** (criar/editar/importar JSON) e **Agentes**. `[ALVO]` na descrição vira o nome do alvo; `target` pode ser vazio, `*` (sorteado) ou nome de um agente. "Flerte" marca missões que não vão para quem tem restrição.
+
+## Hospedagem (servidor fixo)
+Precisa de **disco persistente** montado em `/data` (o banco é SQLite). Com o Dockerfile do repositório:
+
+| Variável | Para quê |
+|---|---|
+| `ADMIN_PASSWORD` | senha do admin |
+| `APP_SECRET` | qualquer texto longo; mantém as senhas visíveis ao admin entre deploys |
+| `CREDENTIALS_JSON` | `{"Nome do agente":"SENHA", ...}` — senhas fixas, sem precisar de arquivo |
+| `DATA_DIR` | `/data` (já é o padrão do Dockerfile) |
+| `TRUST_PROXY` | `1` (já é o padrão do Dockerfile) |
+
+Checagem de saúde: `GET /api/health`. Planos grátis sem disco persistente perdem o banco a cada reinício.

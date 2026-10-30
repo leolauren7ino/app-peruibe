@@ -93,7 +93,9 @@ function syncSeedTexts(app) {
  */
 const readCredentials = (cfg) => {
   const file = path.join(cfg.dataDir, 'credenciais.json');
-  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+  const fromFile = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+  // em hospedagens sem acesso a arquivos: CREDENTIALS_JSON='{"Nome":"SENHA",...}'
+  return { ...fromFile, ...(process.env.CREDENTIALS_JSON ? JSON.parse(process.env.CREDENTIALS_JSON) : {}) };
 };
 
 async function applySeedCredentials(app) {
