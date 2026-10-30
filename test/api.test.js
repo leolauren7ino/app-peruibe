@@ -297,9 +297,19 @@ test('senhas ficam hasheadas no banco (não em texto puro)', () => {
   }
 });
 
+test('nova partida copiando agentes mantém senhas e nome oculto', async () => {
+  assert.equal((await admin.post('/api/admin/games', { name: 'Segunda partida', copyParticipants: true })).status, 200);
+  const o = await ov();
+  assert.equal(o.game.status, 'setup');
+  assert.equal(o.participants.length, 9);
+  assert.equal(o.participants.find((p) => p.name === 'Murillo Moya').alias, '?');
+  assert.equal((await client().post('/api/login', { name: 'Leo', password: 'TESTE-LEO-11' })).status, 200);
+});
+
 test('bloqueia login após muitas tentativas erradas', async () => {
   const c = client();
   let last;
   for (let i = 0; i < 12; i++) last = await c.post('/api/login', { name: 'Baiano', password: `chute${i}` });
   assert.equal(last.status, 429);
 });
+

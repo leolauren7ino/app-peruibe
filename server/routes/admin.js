@@ -93,8 +93,8 @@ export function adminRoutes(router, app) {
         .run(name, prev?.auto_confirm ?? 0, prev?.double_enabled ?? 0, ctx.body.startDate || null, now());
       const gid = Number(r.lastInsertRowid);
       if (prev && ctx.body.copyParticipants) {
-        const ins = db.prepare(`INSERT INTO participants (game_id, name, nickname, pw_hash, pw_enc, restricted_romantic, created_at)
-                                SELECT ?, name, nickname, pw_hash, pw_enc, restricted_romantic, ? FROM participants WHERE game_id = ? ORDER BY id`);
+        const ins = db.prepare(`INSERT INTO participants (game_id, name, nickname, alias, pw_hash, pw_enc, restricted_romantic, created_at)
+                                SELECT ?, name, nickname, alias, pw_hash, pw_enc, restricted_romantic, ? FROM participants WHERE game_id = ? ORDER BY id`);
         ins.run(gid, now(), prev.id);
       }
       return gid;
