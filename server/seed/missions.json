@@ -1,60 +1,192 @@
 [
-  {"title":"Missão [ALVO]","points":3,"category":"bebida","target":"Murillo Moya",
-   "description":"Tomar 5 cervejas com [ALVO] ao longo do fim de semana, no seu ritmo. Quem não bebe usa a versão sem álcool."},
-  {"title":"Missão Pika","points":2,"category":"foto","target":"Bruno Picarelli",
-   "description":"Fumar um charuto com [ALVO]. Se ele não tiver charuto, vale um brinde temático de 'chefão da máfia' com foto."},
-  {"title":"Missão Shot do Vovô","points":2,"category":"bebida","target":"Vovô Slavic",
-   "description":"Tomar o shot do vovô com [ALVO] (o próprio vovô). Versão sem álcool vale igual."},
-  {"title":"Missão Mal Falado","points":2,"category":"social","target":"Leo Laurentino","romantic":1,
-   "description":"Chegar para conversar e flertar com mulheres junto com [ALVO], sempre respeitando um 'não'. Se tomar fora, responda com bom humor: 'Relaxa, eu já peguei várias mulheres. Inclusive espanholas, húngaras, italianas, belgas e alemãs.'"},
-  {"title":"Missão Macaco Gomiero","points":1,"category":"bebida","target":"Felipe Gomiero",
-   "description":"Beber Smirnoff com [ALVO]."},
-  {"title":"Missão Matheus Quinzani","points":3,"category":"atuacao","target":"Matheus Quinzani",
-   "description":"Acender algo seguro e legal na rua (uma estrelinha ou uma vela), fora da casa e do condomínio, e fazer um brinde com [ALVO]. Longe de gente e de qualquer coisa inflamável, com água por perto, e só acende quem estiver bem."},
-  {"title":"Desafio Segurança","points":2,"category":"foto","target":null,
-   "description":"Tirar uma foto e dançar com o segurança do local. Peça autorização antes: se ele não topar ou estiver trabalhando, agradeça e faça uma foto sua em pose de agente na entrada."},
-  {"title":"Missão Baiano","points":2,"category":"infiltracao","target":"Baiano",
-   "description":"Fazer [ALVO] dizer 'lá ele' enquanto vira um shot com você."},
-  {"title":"Missão Henrique Gomiero","points":3,"category":"atuacao","target":"Henrique Gomiero",
-   "description":"Ficar 'alegre' muito rápido (vale atuação) e começar a falar que precisa de ajuda, no estilo do [ALVO]. Quando alguém aceitar ajudar, faça a pessoa brindar com você."},
-
-  {"title":"Brinde Combinado","points":1,"category":"infiltracao","target":null,
-   "description":"Fazer 3 pessoas brindarem com a mesma frase inventada por você, sem que percebam que foi combinado."},
-  {"title":"O Próximo Shot","points":1,"category":"infiltracao","target":"*",
-   "description":"Conseguir que [ALVO] peça o próximo shot da mesa."},
-  {"title":"Pose de Brinde","points":1,"category":"foto","target":null,
-   "description":"Tirar uma foto de brinde com 3 pessoas fazendo a mesma pose, sem combinar."},
-  {"title":"Palavra do Brinde","points":1,"category":"infiltracao","target":"*",
-   "description":"Fazer [ALVO] dizer uma palavra escolhida por você durante um brinde."},
-  {"title":"Bebida Favorita","points":1,"category":"investigacao","target":"*",
-   "description":"Descobrir a bebida favorita de [ALVO] e servir uma a ele sem revelar que era desafio."},
-
-  {"title":"Drink do Chef","points":2,"category":"bebida","target":"*",
-   "description":"Convencer [ALVO] a trocar a bebida que está tomando por um drink que você preparou, dizendo que é melhor. Avise o que tem no drink, sem surpresas no copo."},
-  {"title":"Brinde Rimado","points":2,"category":"humor","target":"*",
-   "description":"Fazer [ALVO] improvisar um brinde em rima, e todo mundo bebe no final."},
-  {"title":"Dedicatória","points":2,"category":"social","target":"*",
-   "description":"Conseguir que [ALVO] faça um brinde em voz alta dedicado a alguém da mesa que ele não esperava."},
-  {"title":"Par ou Ímpar","points":2,"category":"infiltracao","target":null,
-   "description":"Fazer duas pessoas decidirem na sorte (par ou ímpar, pedra-papel-tesoura) quem toma um shot, sem perceberem que você começou a ideia."},
-  {"title":"Foto Espelhada","points":2,"category":"foto","target":"*",
-   "description":"Conseguir uma foto de [ALVO] e outra pessoa brindando com a mesma pose, sem combinar."},
-  {"title":"Aula de Drink","points":2,"category":"social","target":"*",
-   "description":"Fazer [ALVO] te ensinar um drink ou um brinde que ele conhece e executar com o grupo."},
-  {"title":"DJ da Vez","points":2,"category":"social","target":"*",
-   "description":"Convencer [ALVO] a escolher a música da vez, e todos brindam quando o refrão entrar."},
-
-  {"title":"Regra da Casa","points":3,"category":"infiltracao","target":null,
-   "description":"Criar uma 'regra da casa' nova (palavra, gesto ou música) que o grupo passa a obedecer até o fim da noite: quem quebrar a regra toma um gole."},
-  {"title":"Rodada de Caipirinha","points":3,"category":"bebida","target":"*",
-   "description":"Convencer [ALVO] a preparar uma rodada de caipirinha para o grupo inteiro."},
-  {"title":"Informação Leve","points":3,"category":"investigacao","target":"*",
-   "description":"Descobrir uma informação leve sobre [ALVO] (ex.: a primeira bebida que ele tomou na vida) e usá-la num brinde público."},
-  {"title":"Garçom Oficial","points":3,"category":"atuacao","target":"*",
-   "description":"Convencer [ALVO] a ser o garçom oficial por 30 minutos, servindo todo mundo."},
-
-  {"title":"Cerimônia do Brinde","points":5,"category":"atuacao","target":null,
-   "description":"Organizar, sem ninguém saber que foi você, uma cerimônia de brinde com 5 pessoas e uma bebida misteriosa preparada por você. Sempre avise a bebida base. Quem não quiser beber usa copo sem álcool."},
-  {"title":"Desafio de Shot","points":5,"category":"infiltracao","target":"*",
-   "description":"Fazer [ALVO] aceitar, na frente de todos, um desafio de shot escolhido por você (shot sem álcool vale, e o alvo pode recusar)."}
+ {
+  "title": "Missão [ALVO]",
+  "points": 3,
+  "category": "bebida",
+  "target": "Murillo Moya",
+  "description": "Tomar 5 cervejas com [ALVO] ao longo do fim de semana."
+ },
+ {
+  "title": "Missão Pika",
+  "points": 2,
+  "category": "foto",
+  "target": "Bruno Picarelli",
+  "description": "Fumar um charuto com [ALVO] (se ele não tiver, fumar outra coisa legal)."
+ },
+ {
+  "title": "Missão Shot do Vovô",
+  "points": 2,
+  "category": "bebida",
+  "target": "Vovô Slavic",
+  "description": "Tomar o shot do vovô com o vovô."
+ },
+ {
+  "title": "Missão Mal Falado",
+  "points": 2,
+  "category": "social",
+  "target": "Leo Laurentino",
+  "description": "Chegar para flertar com mulheres junto com o Mal Falado e, se tomar fora, dizer que já pegou várias mulheres, inclusive espanholas, húngaras, italianas, belgas e alemãs.",
+  "romantic": 1
+ },
+ {
+  "title": "Missão Macaco Gomiero",
+  "points": 1,
+  "category": "bebida",
+  "target": "Felipe Gomiero",
+  "description": "Beber Smirnoff com [ALVO]."
+ },
+ {
+  "title": "Missão Matheus Quinzani",
+  "points": 3,
+  "category": "atuacao",
+  "target": "Matheus Quinzani",
+  "description": "Acender algo seguro e legal na rua (estrelinha ou vela), fora da casa e do condomínio, com um brinde."
+ },
+ {
+  "title": "Desafio Segurança",
+  "points": 2,
+  "category": "foto",
+  "target": null,
+  "description": "Tirar foto e dançar com o segurança do local."
+ },
+ {
+  "title": "Missão Baiano",
+  "points": 2,
+  "category": "infiltracao",
+  "target": "Baiano",
+  "description": "Fazer o Baiano dizer \"lá ele\" enquanto vira um shot com você."
+ },
+ {
+  "title": "Missão Henrique Gomiero",
+  "points": 3,
+  "category": "atuacao",
+  "target": "Henrique Gomiero",
+  "description": "Ficar alegre muito rápido e começar a falar que precisa de ajuda. Quando alguém aceitar ajudar, fazer a pessoa brindar com você."
+ },
+ {
+  "title": "Brinde Combinado",
+  "points": 1,
+  "category": "infiltracao",
+  "target": null,
+  "description": "Fazer 3 pessoas brindarem com a mesma frase inventada por você, sem que percebam que foi combinado."
+ },
+ {
+  "title": "O Próximo Shot",
+  "points": 1,
+  "category": "infiltracao",
+  "target": "*",
+  "description": "Conseguir que [ALVO] peça o próximo shot da mesa."
+ },
+ {
+  "title": "Pose de Brinde",
+  "points": 1,
+  "category": "foto",
+  "target": null,
+  "description": "Tirar uma foto de brinde com 3 pessoas fazendo a mesma pose, sem combinar."
+ },
+ {
+  "title": "Palavra do Brinde",
+  "points": 1,
+  "category": "infiltracao",
+  "target": "*",
+  "description": "Fazer [ALVO] dizer uma palavra escolhida por você durante um brinde."
+ },
+ {
+  "title": "Bebida Favorita",
+  "points": 1,
+  "category": "investigacao",
+  "target": "*",
+  "description": "Descobrir a bebida favorita de [ALVO] e servir uma a ele sem revelar que era desafio."
+ },
+ {
+  "title": "Drink do Chef",
+  "points": 2,
+  "category": "bebida",
+  "target": "*",
+  "description": "Convencer [ALVO] a trocar a bebida que está tomando por um drink que você preparou, dizendo que é melhor."
+ },
+ {
+  "title": "Brinde Rimado",
+  "points": 2,
+  "category": "humor",
+  "target": "*",
+  "description": "Fazer [ALVO] improvisar um brinde em rima, e todo mundo bebe no final."
+ },
+ {
+  "title": "Dedicatória",
+  "points": 2,
+  "category": "social",
+  "target": "*",
+  "description": "Conseguir que [ALVO] faça um brinde em voz alta dedicado a alguém da mesa que ele não esperava."
+ },
+ {
+  "title": "Par ou Ímpar",
+  "points": 2,
+  "category": "infiltracao",
+  "target": null,
+  "description": "Fazer duas pessoas decidirem na sorte (par ou ímpar, pedra-papel-tesoura) quem toma um shot, sem perceberem que você começou a ideia."
+ },
+ {
+  "title": "Foto Espelhada",
+  "points": 2,
+  "category": "foto",
+  "target": "*",
+  "description": "Conseguir uma foto de [ALVO] e outra pessoa brindando com a mesma pose, sem combinar."
+ },
+ {
+  "title": "Aula de Drink",
+  "points": 2,
+  "category": "social",
+  "target": "*",
+  "description": "Fazer [ALVO] te ensinar um drink ou um brinde que ele conhece e executar com o grupo."
+ },
+ {
+  "title": "DJ da Vez",
+  "points": 2,
+  "category": "social",
+  "target": "*",
+  "description": "Convencer [ALVO] a escolher a música da vez, e todos brindam quando o refrão entrar."
+ },
+ {
+  "title": "Regra da Casa",
+  "points": 3,
+  "category": "infiltracao",
+  "target": null,
+  "description": "Criar uma \"regra da casa\" nova (palavra, gesto ou música) que o grupo passa a obedecer bebendo até o fim da noite."
+ },
+ {
+  "title": "Rodada de Caipirinha",
+  "points": 3,
+  "category": "bebida",
+  "target": "*",
+  "description": "Convencer [ALVO] a preparar uma rodada de caipirinha para o grupo inteiro."
+ },
+ {
+  "title": "Informação Leve",
+  "points": 3,
+  "category": "investigacao",
+  "target": "*",
+  "description": "Descobrir uma informação leve sobre [ALVO] (ex.: a primeira bebida que ele tomou na vida) e usá-la num brinde público."
+ },
+ {
+  "title": "Garçom Oficial",
+  "points": 3,
+  "category": "atuacao",
+  "target": "*",
+  "description": "Convencer [ALVO] a ser o garçom oficial por 30 minutos, servindo todo mundo."
+ },
+ {
+  "title": "Cerimônia do Brinde",
+  "points": 5,
+  "category": "atuacao",
+  "target": null,
+  "description": "Organizar, sem ninguém saber que foi você, uma cerimônia de brinde com 5 pessoas e uma bebida misteriosa preparada por você (a bebida base sempre avisada)."
+ },
+ {
+  "title": "Desafio de Shot",
+  "points": 5,
+  "category": "infiltracao",
+  "target": "*",
+  "description": "Fazer [ALVO] aceitar, na frente de todos, um desafio de shot escolhido por você."
+ }
 ]

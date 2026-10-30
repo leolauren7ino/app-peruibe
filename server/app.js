@@ -5,7 +5,7 @@ import { loadConfig, ROOT } from './config.js';
 import { openDb, tx, now } from './db.js';
 import { loadSecretKey, LoginLimiter, readSession, hashPassword, verifyPassword, generatePassword } from './security.js';
 import { createRouter, HANDLED, HttpError, parseCookies, readJson, sendJson, serveStatic } from './http.js';
-import { addParticipant, currentGame, drawAllMissions, setPassword } from './game.js';
+import { addParticipant, currentGame, drawAllMissions, drawDouble, setPassword } from './game.js';
 import { authRoutes } from './routes/auth.js';
 import { playerRoutes } from './routes/player.js';
 import { adminRoutes } from './routes/admin.js';
@@ -51,7 +51,8 @@ async function setupAdmin(app) {
   }
 }
 
-const CATALOG_VERSION = 2; // 2 = desafios do Peruibiza (pontos 1/2/3/5, um por dia)
+const CATALOG_VERSION = 2; // 2 = desafios do Peruibiza (pontos 1/2/3/5)
+const TEXTS_VERSION = 3; // 3 = textos exatamente como o organizador escreveu (sem reescritas); Agente Duplo ligado por padrão
 
 function ensureCatalog(app) {
   const { db } = app;
@@ -63,8 +64,27 @@ function ensureCatalog(app) {
     db.prepare('UPDATE missions SET active = 0').run(); // o catálogo da 1ª versão fica no histórico, mas fora do sorteio
     seed.forEach((m) => ins.run(m.title, m.description, m.points, m.category, m.target ?? null, m.romantic ? 1 : 0, now()));
     db.prepare("INSERT INTO settings (key, value) VALUES ('catalog_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(String(CATALOG_VERSION));
+    db.prepare("INSERT INTO settings (key, value) VALUES ('texts_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(String(TEXTS_VERSION));
   });
   return true;
+}
+
+/** Bancos que já tinham os desafios recebem os textos oficiais no lugar (sem mexer em sorteios em andamento) uma única vez. */
+function syncSeedTexts(app) {
+  const { db } = app;
+  if (Number(db.prepare("SELECT value FROM settings WHERE key = 'texts_version'").get()?.value) >= TEXTS_VERSION) return;
+  const seed = JSON.parse(fs.readFileSync(path.join(ROOT, 'server/seed/missions.json'), 'utf8'));
+  const upd = db.prepare('UPDATE missions SET title = ?, description = ?, points = ?, category = ?, target = ?, romantic = ? WHERE title IN (?, ?)');
+  tx(db, () => {
+    for (const m of seed) upd.run(m.title, m.description, m.points, m.category, m.target ?? null, m.romantic ? 1 : 0, m.title, m.title === 'Missão [ALVO]' ? 'Missão Moya' : m.title);
+    db.prepare("INSERT INTO settings (key, value) VALUES ('texts_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(String(TEXTS_VERSION));
+  });
+  // partida ainda em preparação: liga e sorteia o Agente Duplo (em partida já iniciada o sorteio está travado)
+  const g = currentGame(db);
+  if (g && g.status === 'setup') {
+    db.prepare('UPDATE games SET double_enabled = 1 WHERE id = ?').run(g.id);
+    if (!g.double_agent_id) drawDouble(db, { ...g, double_enabled: 1 });
+  }
 }
 
 /**
@@ -98,8 +118,7 @@ async function applySeedCredentials(app) {
 async function seedIfEmpty(app) {
   const { db, cfg, key } = app;
   const changed = ensureCatalog(app);
-  // o título não deve entregar o nome de quem tem "nome oculto"
-  db.prepare("UPDATE missions SET title = 'Missão [ALVO]' WHERE title = 'Missão Moya'").run();
+  syncSeedTexts(app); // o título de Moya usa [ALVO] para não entregar o nome de quem tem "nome oculto"
   const existing = currentGame(db);
   if (existing) {
     await applySeedCredentials(app);
@@ -113,12 +132,13 @@ async function seedIfEmpty(app) {
     }
     return;
   }
-  const r = db.prepare('INSERT INTO games (name, start_date, created_at) VALUES (?, ?, ?)').run('Peruibiza 4ª Edição', '2026-10-30', now());
+  const r = db.prepare('INSERT INTO games (name, start_date, double_enabled, created_at) VALUES (?, ?, 1, ?)').run('Peruibiza 4ª Edição', '2026-10-30', now());
   const game = db.prepare('SELECT * FROM games WHERE id = ?').get(r.lastInsertRowid);
   const people = JSON.parse(fs.readFileSync(path.join(ROOT, 'server/seed/participants.json'), 'utf8'));
   const creds = readCredentials(cfg);
   for (const p of people) await addParticipant(db, key, game, { ...p, password: creds[p.name] });
   if (Object.keys(creds).length) db.prepare("INSERT INTO settings (key, value) VALUES ('seed_credentials_applied', '1')").run();
+  drawDouble(db, game);
   drawAllMissions(db, cfg.dataDir, game);
   app.notes.push(`Partida "${game.name}" criada com ${people.length} agentes e já sorteada. Entre como admin para ver as senhas e iniciar a operação.`);
 }

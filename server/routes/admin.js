@@ -90,7 +90,7 @@ export function adminRoutes(router, app) {
     const id = tx(db, () => {
       if (prev && prev.status !== 'finished') db.prepare("UPDATE games SET status = 'finished', finished_at = ? WHERE id = ?").run(now(), prev.id);
       const r = db.prepare('INSERT INTO games (name, auto_confirm, double_enabled, start_date, created_at) VALUES (?,?,?,?,?)')
-        .run(name, prev?.auto_confirm ?? 0, prev?.double_enabled ?? 0, ctx.body.startDate || null, now());
+        .run(name, prev?.auto_confirm ?? 0, ctx.body.doubleEnabled === false ? 0 : 1, ctx.body.startDate || null, now());
       const gid = Number(r.lastInsertRowid);
       if (prev && ctx.body.copyParticipants) {
         const ins = db.prepare(`INSERT INTO participants (game_id, name, nickname, alias, pw_hash, pw_enc, restricted_romantic, created_at)

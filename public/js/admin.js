@@ -92,7 +92,7 @@ export function startAdmin(root, logout) {
       h('h2', {}, 'Configurações'),
       h('div', { class: 'card' },
         h('label', { class: 'check' }, auto, 'Aprovar automaticamente (sem fila de análise)'),
-        h('label', { class: 'check' }, dbl, 'Usar Agente Duplo (lê todos os desafios; desligado por padrão)'), save,
+        h('label', { class: 'check' }, dbl, 'Usar Agente Duplo (lê os desafios de todos)'), save,
         h('p', { class: 'muted', style: 'font-size:13px' }, 'A pontuação é de cada desafio (1, 2, 3 ou 5) e se edita na aba Missões. O Agente Duplo só liga/desliga antes de iniciar.')),
       g.status !== 'finished' && h('div', {}, newGameButton('＋ Nova partida (encerra a atual)')));
   }

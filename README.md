@@ -19,7 +19,7 @@ Banco da versão anterior? Ao subir, ele é migrado sozinho (agentes e senhas pr
 - Agente marca como concluído → fila do organizador → confirma (foto ou testemunha) → pontos.
 - **Fichas de passe**: 2 por agente (recusa sem perder pontos). **Flagrante**: o agente denuncia, o admin julga: acusador +1 e o dono perde aquela carta. **Fuga**: admin aplica -1 em "± Ajustar pontos".
 - **Encerrar e revelar** (segunda): todos os desafios ficam visíveis e o ranking final mostra o campeão e quem paga a rodada.
-- **Agente Duplo** é opcional (desligado por padrão): ele lê todos os desafios, o que combina mal com o Flagrante.
+- **Agente Duplo**: sorteado entre os agentes e visível só para ele (aba Cofre); o admin o vê no painel. Dá para desligar em Configurações antes de iniciar.
 - O sorteio garante: ninguém recebe desafio com o próprio nome, `[ALVO]` nunca é o dono, quem tem restrição não recebe desafio de flerte, e a soma de pontos fica equilibrada. O catálogo padrão tem exatamente 27 desafios (9 x 3): para trocar desafios ou entrar mais gente, cadastre extras.
 
 ## Variáveis

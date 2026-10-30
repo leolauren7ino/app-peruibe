@@ -70,8 +70,8 @@ test('antes de iniciar, o agente não vê desafios nem papel', async () => {
 });
 
 test('admin vê tudo e agentes não acessam a área admin', async () => {
-  assert.equal(overview.game.doubleEnabled, false);
-  assert.equal(overview.doubleAgent, null);
+  assert.equal(overview.game.doubleEnabled, true);
+  assert.ok(overview.doubleAgent?.name);
   assert.equal(overview.participants.length, 9);
   assert.ok(overview.participants.every((p) => p.password && p.missions.length === 3));
   const c = await loginAs('Baiano');
@@ -85,14 +85,12 @@ test('sorteio: 3 desafios por agente, pontuação equilibrada, ninguém recebe d
   for (const p of overview.participants) {
     assert.deepEqual(p.missions.map((m) => m.day), [1, 2, 3]);
     assert.ok(p.missions.every((m) => !/\[ALVO\]|\{alvo\}/i.test(m.description)), 'alvo substituído');
-    assert.ok(p.missions.every((m) => !m.description.includes(p.name)), `${p.name} recebeu desafio com o próprio nome`);
+    assert.ok(p.missions.every((m) => !m.targetLabel || !m.targetLabel.startsWith(p.name)), `${p.name} recebeu desafio com o próprio nome`);
     if (p.restrictedRomantic) assert.ok(p.missions.every((m) => !m.romantic));
   }
 });
 
-test('Agente Duplo é opcional: desligado por padrão, ligado só antes de iniciar', async () => {
-  assert.equal((await admin.post('/api/admin/draw/double')).status, 409);
-  assert.equal((await admin.patch('/api/admin/game', { doubleEnabled: true })).status, 200);
+test('Agente Duplo vem ligado e sorteado; pode ser sorteado de novo antes de iniciar', async () => {
   assert.equal((await admin.post('/api/admin/draw/double')).status, 200);
   overview = await ov();
   assert.ok(overview.doubleAgent?.name);
