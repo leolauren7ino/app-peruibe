@@ -6,6 +6,7 @@ import { openDb, tx, now } from './db.js';
 import { loadSecretKey, LoginLimiter, readSession, hashPassword, verifyPassword, generatePassword } from './security.js';
 import { createRouter, HANDLED, HttpError, parseCookies, readJson, sendJson, serveStatic } from './http.js';
 import { addParticipant, currentGame, drawAllMissions, drawDouble, setPassword } from './game.js';
+import { createBackup } from './backup.js';
 import { authRoutes } from './routes/auth.js';
 import { playerRoutes } from './routes/player.js';
 import { adminRoutes } from './routes/admin.js';
@@ -13,10 +14,34 @@ import { adminRoutes } from './routes/admin.js';
 export async function createApp(overrides = {}) {
   const cfg = loadConfig(overrides);
   fs.mkdirSync(path.join(cfg.dataDir, 'evidence'), { recursive: true });
-  const db = openDb(path.join(cfg.dataDir, 'peruibe.db'));
+  const dbFile = path.join(cfg.dataDir, 'peruibe.db');
+  const notes = [];
+  const backup = cfg.backup ? createBackup({ ...cfg.backup, dbFile }) : null;
+  if (backup) {
+    // se não der para consultar o Gist, falha de propósito: melhor não subir do que começar um jogo novo por cima do salvo
+    const state = await backup.restoreIfMissing();
+    if (state === 'restored') notes.push('Banco restaurado do backup (Gist).');
+    if (!cfg.appSecret) notes.push('ATENÇÃO: defina APP_SECRET; sem ele as senhas visíveis ao admin não sobrevivem a um reinício.');
+  }
+  const db = openDb(dbFile);
   const key = loadSecretKey(cfg.dataDir, cfg.appSecret);
   const limiter = new LoginLimiter();
-  const app = { cfg, db, key, limiter, notes: [] };
+  const app = { cfg, db, key, limiter, notes };
+
+  // salva o banco no Gist pouco depois de qualquer alteração (várias seguidas viram um único envio)
+  let timer = null;
+  let chain = Promise.resolve();
+  app.flush = async () => {
+    if (!backup) return;
+    clearTimeout(timer);
+    timer = null;
+    chain = chain.catch(() => {}).then(() => backup.save(db));
+    await chain;
+  };
+  app.dirty = () => {
+    if (!backup || timer) return;
+    timer = setTimeout(() => { timer = null; app.flush().catch((e) => console.error(e.message)); }, cfg.backupDelayMs);
+  };
 
   await setupAdmin(app);
   if (cfg.seed) await seedIfEmpty(app);
@@ -26,12 +51,16 @@ export async function createApp(overrides = {}) {
   playerRoutes(router, app);
   adminRoutes(router, app);
 
+  app.dirty();
   const server = http.createServer((req, res) => handle(app, router, req, res));
   return {
     ...app,
     server,
     listen: () => new Promise((ok) => server.listen(cfg.port, () => ok(server.address().port))),
-    close: () => new Promise((ok) => { server.close(() => { db.close(); ok(); }); server.closeAllConnections?.(); }),
+    close: async () => {
+      await app.flush().catch((e) => console.error(e.message));
+      await new Promise((ok) => { server.close(() => { db.close(); ok(); }); server.closeAllConnections?.(); });
+    },
   };
 }
 
@@ -184,6 +213,7 @@ async function handle(app, router, req, res) {
       headers: {},
     };
     const out = await match.handler(ctx);
+    if (mutating && !/^\/api\/(login|logout)$/.test(url.pathname)) app.dirty();
     if (out !== HANDLED) sendJson(res, 200, out ?? { ok: true }, ctx.headers);
   } catch (err) {
     if (err instanceof HttpError) return sendJson(res, err.status, { error: err.message });

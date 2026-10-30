@@ -50,3 +50,6 @@ Precisa de **disco persistente** montado em `/data` (o banco é SQLite). Com o D
 | `TRUST_PROXY` | `1` (já é o padrão do Dockerfile) |
 
 Checagem de saúde: `GET /api/health`. Planos grátis sem disco persistente perdem o banco a cada reinício.
+
+### Hospedagem grátis (sem disco persistente): Render + backup em Gist
+Defina também `GIST_ID` e `GIST_TOKEN` (token clássico do GitHub só com o escopo `gist`). O app grava o banco no Gist pouco depois de cada alteração e o restaura sozinho quando o servidor reinicia com disco vazio. Se o GitHub não responder no boot, o app **não sobe** (para não criar um jogo novo por cima do salvo). Fotos de evidência não entram no backup. Use um monitor de uptime (ex.: UptimeRobot) em `/api/health` a cada 5 min para o serviço não dormir.

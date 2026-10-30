@@ -12,6 +12,9 @@ export function loadConfig(overrides = {}) {
     adminPassword: process.env.ADMIN_PASSWORD || null,
     appSecret: process.env.APP_SECRET || null,
     trustProxy: process.env.TRUST_PROXY === '1',
+    // backup do banco em um Gist privado (hospedagem grátis sem disco persistente)
+    backup: process.env.GIST_ID && process.env.GIST_TOKEN ? { gistId: process.env.GIST_ID, token: process.env.GIST_TOKEN } : null,
+    backupDelayMs: 8000,
     seed: true,
     sessionDays: 14,
     maxImageBytes: 4 * 1024 * 1024,
