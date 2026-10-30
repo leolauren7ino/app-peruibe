@@ -280,6 +280,23 @@ export function adminRoutes(router, app) {
     return HANDLED;
   });
 
+  // Avisos: o admin define o vencedor do confronto ou oculta o aviso.
+  admin('/api/admin/announcements', 'GET', () => ({ announcements: db.prepare('SELECT * FROM announcements ORDER BY id DESC').all() }));
+  admin('/api/admin/announcements/:id', 'PATCH', (ctx) => {
+    const id = int(ctx.params.id);
+    const a = db.prepare('SELECT * FROM announcements WHERE id = ?').get(id);
+    if (!a) throw new HttpError(404, 'Aviso não encontrado.');
+    const b = ctx.body;
+    if (b.winner !== undefined && ![null, 'left', 'right'].includes(b.winner)) throw new HttpError(400, 'Vencedor deve ser left, right ou null.');
+    db.prepare('UPDATE announcements SET winner = ?, active = ?, body = ?, subtitle = ? WHERE id = ?').run(
+      b.winner !== undefined ? b.winner : a.winner,
+      b.active !== undefined ? (b.active ? 1 : 0) : a.active,
+      b.body !== undefined ? str(b.body, 'Texto', { max: 400 }) : a.body,
+      b.subtitle !== undefined ? str(b.subtitle, 'Subtítulo', { max: 60, required: false }) || null : a.subtitle,
+      id);
+    return { ok: true };
+  });
+
   admin('/api/admin/events', 'GET', () => {
     const g = currentGame(db);
     return { events: g ? db.prepare('SELECT * FROM events WHERE game_id = ? ORDER BY id DESC LIMIT 300').all(g.id) : [] };

@@ -304,6 +304,27 @@ test('nova partida copiando agentes mantém senhas e nome oculto', async () => {
   assert.equal((await client().post('/api/login', { name: 'Leo', password: 'TESTE-LEO-11' })).status, 200);
 });
 
+test('anúncio do Clássico: visível só logado, imagens protegidas, admin define o vencedor', async () => {
+  players.Baiano = await loginAs('Baiano'); // a nova partida do teste anterior derrubou as sessões dos agentes
+  assert.equal((await client().get('/api/announcements')).status, 401);
+  assert.equal((await client().get('/api/assets/classico-esquerda.jpg')).status, 401);
+  const list = (await players.Baiano.get('/api/announcements')).body.announcements;
+  assert.equal(list.length, 1);
+  assert.deepEqual([list[0].title, list[0].left.name, list[0].right.name, list[0].winner], ['O CLÁSSICO', 'Vovô Slavic', 'Brunão', null]);
+  assert.match(list[0].body, /controla o outro por todo o dia/);
+  const img = await players.Baiano.get(list[0].left.image);
+  assert.equal(img.status, 200);
+  assert.deepEqual([...img.body.subarray(0, 3)], [0xff, 0xd8, 0xff]);
+  for (const bad of ['..%2fconfig.js', 'x.html', '.env', '%2e%2e%2fapp.js']) assert.equal((await players.Baiano.get(`/api/assets/${bad}`)).status, 404, bad);
+
+  assert.equal((await players.Baiano.patch(`/api/admin/announcements/${list[0].id}`, { winner: 'left' })).status, 403);
+  assert.equal((await admin.patch(`/api/admin/announcements/${list[0].id}`, { winner: 'ninguém' })).status, 400);
+  assert.equal((await admin.patch(`/api/admin/announcements/${list[0].id}`, { winner: 'right' })).status, 200);
+  assert.equal((await players.Baiano.get('/api/announcements')).body.announcements[0].winner, 'right');
+  assert.equal((await admin.patch(`/api/admin/announcements/${list[0].id}`, { active: false })).status, 200);
+  assert.equal((await players.Baiano.get('/api/announcements')).body.announcements.length, 0);
+});
+
 test('bloqueia login após muitas tentativas erradas', async () => {
   const c = client();
   let last;

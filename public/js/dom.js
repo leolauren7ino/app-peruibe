@@ -112,3 +112,18 @@ export function rankingList(ranking, meId = null) {
     h('div', { class: 'sub' }, `${r.done} concluídas · ${r.remaining} restantes${r.lost ? ` · ${r.lost} perdidas/passe` : ''} · ${r.percent}%`),
   )));
 }
+
+/** Cartão de confronto ("O Clássico"): duas fotos frente a frente e, se já houver, o resultado. */
+export function versusCard(a) {
+  const side = (s, which) => h('div', { class: `vs-side ${a.winner === which ? 'win' : a.winner ? 'lose' : ''}` },
+    s.image && h('img', { class: 'vs-photo', src: s.image, alt: s.name }),
+    h('div', { class: 'vs-name' }, s.name),
+    a.winner === which && h('div', { class: 'vs-crown' }, '🏆 VENCEDOR'));
+  const win = a.winner && a[a.winner];
+  const lose = a.winner && a[a.winner === 'left' ? 'right' : 'left'];
+  return h('div', { class: 'card red vs' },
+    h('div', { class: 'row between' }, h('span', { class: 'stamp' }, 'Anúncio'), a.subtitle && h('span', { class: 'chip red' }, `🎮 ${a.subtitle}`)),
+    h('h1', { class: 'vs-title' }, a.title),
+    h('div', { class: 'vs-grid' }, side(a.left, 'left'), h('div', { class: 'vs-x' }, 'X'), side(a.right, 'right')),
+    h('p', { class: 'vs-body' }, a.winner ? `🏆 ${win.name} venceu e controla ${lose.name} por todo o dia.` : a.body));
+}

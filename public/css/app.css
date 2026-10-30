@@ -140,3 +140,16 @@ input:focus, textarea:focus, select:focus { border-color: var(--red); }
 .empty { text-align: center; color: var(--muted); font-family: var(--mono); padding: 28px 0; font-size: 13px; }
 .wait { text-align: center; padding: 40px 10px; }
 .wait .big { font-size: 56px; }
+
+/* ---------- anúncio / confronto ---------- */
+.vs { text-align: center; }
+.vs-title { font-size: 26px; margin: 12px 0 4px; letter-spacing: .12em; }
+.vs-grid { display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; gap: 6px; margin: 12px 0 8px; }
+.vs-side { display: grid; justify-items: center; gap: 6px; }
+.vs-photo { width: min(34vw, 132px); height: min(34vw, 132px); border-radius: 50%; object-fit: cover; border: 3px solid var(--red); box-shadow: 0 0 0 4px #1d0c0f, 0 8px 24px rgba(224,33,47,.25); }
+.vs-name { font-family: var(--mono); font-weight: 800; text-transform: uppercase; letter-spacing: .05em; font-size: 14px; }
+.vs-x { font-family: var(--mono); font-weight: 800; font-size: 30px; color: var(--red); }
+.vs-side.win .vs-photo { border-color: var(--amber); box-shadow: 0 0 0 4px #2a1f06, 0 8px 28px rgba(242,182,50,.35); }
+.vs-side.lose .vs-photo { filter: grayscale(1); opacity: .6; }
+.vs-crown { font-family: var(--mono); font-size: 11px; letter-spacing: .12em; color: var(--amber); }
+.vs-body { margin: 10px 0 2px; font-size: 16px; }

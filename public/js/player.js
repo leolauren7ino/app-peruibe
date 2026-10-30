@@ -1,4 +1,4 @@
-import { h, sheet, closeSheet, sheetIsOpen, toast, busy, statusChip, fmtDate, imageToDataUrl, rankingList, confirmSheet, tier, CATEGORY, MEDAL } from './dom.js';
+import { h, sheet, closeSheet, sheetIsOpen, toast, busy, statusChip, fmtDate, imageToDataUrl, rankingList, confirmSheet, tier, versusCard, CATEGORY, MEDAL } from './dom.js';
 import { get, post } from './api.js';
 
 const RULES = [
@@ -14,7 +14,7 @@ const RULES = [
 ];
 
 export function startPlayer(root, logout) {
-  const st = { tab: 'missions', me: null, ranking: null, central: null, reveal: null, flags: null, revealed: false };
+  const st = { tab: 'missions', ann: [], me: null, ranking: null, central: null, reveal: null, flags: null, revealed: false };
   let revealTimer;
   const main = h('main');
   const nav = h('nav', { class: 'nav' });
@@ -31,6 +31,7 @@ export function startPlayer(root, logout) {
 
   async function load() {
     st.me = await get('/api/me');
+    st.ann = (await get('/api/announcements')).announcements;
     if (['ranking', 'flag'].includes(st.tab)) st.ranking = (await get('/api/ranking')).ranking;
     if (st.tab === 'flag') st.flags = (await get('/api/me/flagrantes')).flagrantes;
     if (st.tab === 'central') st.central = (await get('/api/double/overview')).agents;
@@ -63,6 +64,7 @@ export function startPlayer(root, logout) {
     const roleBtn = me.role && h('button', { class: `role ${st.revealed ? 'shown' : ''}`, onclick: toggleRole },
       st.revealed ? `🕵️ Seu papel: ${me.role === 'AGENTE_DUPLO' ? 'AGENTE DUPLO' : 'AGENTE SECRETO'}` : '👁 TOQUE PARA VER SEU PAPEL (some em 6s)');
     return h('div', {},
+      st.ann.map(versusCard),
       h('div', { class: 'welcome' }, h('h1', {}, 'Bem-vindo, agente.'), h('div', { class: 'who' }, me.name.toUpperCase())),
       roleBtn,
       h('div', { class: 'score' },
@@ -206,13 +208,27 @@ export function startPlayer(root, logout) {
       }));
   }
 
+  // Anúncio em tela cheia uma vez por mudança (aviso novo ou resultado novo).
+  function popups() {
+    if (sheetIsOpen()) return;
+    for (const a of st.ann) {
+      const key = `aviso:${a.id}:${a.winner || '-'}`;
+      let seen = false;
+      try { seen = !!localStorage.getItem(key); } catch { /* armazenamento indisponível: mostra sempre */ }
+      if (seen) continue;
+      try { localStorage.setItem(key, '1'); } catch { /* ignora */ }
+      sheet('📣 Atenção, agentes', versusCard(a), h('button', { class: 'btn primary', onclick: closeSheet }, 'Entendi'));
+      return;
+    }
+  }
+
   // ---- ciclo de vida ---------------------------------------------------------------------------------------
   const tick = async () => {
     if (document.hidden || sheetIsOpen() || /INPUT|TEXTAREA|SELECT/.test(document.activeElement?.tagName)) return;
-    try { await load(); render(); } catch { /* sessão expirada tratada pelo handler global */ }
+    try { await load(); render(); popups(); } catch { /* sessão expirada tratada pelo handler global */ }
   };
   const timer = setInterval(tick, 15000);
   document.addEventListener('visibilitychange', tick);
-  load().then(render).catch((e) => toast(e.message, 'err'));
+  load().then(() => { render(); popups(); }).catch((e) => toast(e.message, 'err'));
   return () => { clearInterval(timer); clearTimeout(revealTimer); document.removeEventListener('visibilitychange', tick); closeSheet(); };
 }

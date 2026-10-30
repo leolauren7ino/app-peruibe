@@ -6,6 +6,9 @@ import {
 } from '../game.js';
 import { saveEvidence, removeEvidence, sendEvidence } from '../evidence.js';
 import { now } from '../db.js';
+import { sendFile } from '../http.js';
+import path from 'node:path';
+import { ROOT } from '../config.js';
 
 export function playerRoutes(router, app) {
   const { db, cfg } = app;
@@ -115,6 +118,26 @@ export function playerRoutes(router, app) {
       flagrantes: db.prepare(`SELECT f.id, f.status, f.guess, f.created_at, COALESCE(NULLIF(t.alias, ''), t.name) AS accused FROM flagrantes f
                               JOIN participants t ON t.id = f.accused_id WHERE f.accuser_id = ? AND f.game_id = ? ORDER BY f.id DESC`).all(p.id, game.id),
     };
+  });
+
+  // Avisos em destaque (ex.: o Clássico). Imagens só para quem está logado.
+  router.add('GET', '/api/announcements', (ctx) => {
+    needAnyone(ctx);
+    return {
+      announcements: db.prepare('SELECT * FROM announcements WHERE active = 1 ORDER BY id DESC').all().map((a) => ({
+        id: a.id, kind: a.kind, title: a.title, subtitle: a.subtitle, body: a.body, winner: a.winner,
+        left: { name: a.left_name, image: a.left_image && `/api/assets/${a.left_image}` },
+        right: { name: a.right_name, image: a.right_image && `/api/assets/${a.right_image}` },
+      })),
+    };
+  });
+
+  router.add('GET', '/api/assets/:name', (ctx) => {
+    needAnyone(ctx);
+    const name = ctx.params.name;
+    if (!/^[a-z0-9][a-z0-9._-]*\.(jpg|png|webp)$/i.test(name)) throw new HttpError(404, 'Arquivo não encontrado.');
+    sendFile(ctx.res, path.join(ROOT, 'server/assets', name), { cache: 'private, max-age=3600' });
+    return HANDLED;
   });
 
   router.add('GET', '/api/ranking', (ctx) => {

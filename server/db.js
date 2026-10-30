@@ -101,6 +101,22 @@ CREATE TABLE IF NOT EXISTS events (
   detail TEXT
 );
 
+-- Avisos em destaque para todos os agentes (ex.: o "Clássico"). left/right = lados do confronto.
+CREATE TABLE IF NOT EXISTS announcements (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  kind TEXT NOT NULL DEFAULT 'versus',
+  title TEXT NOT NULL,
+  subtitle TEXT,
+  body TEXT,
+  left_name TEXT,
+  right_name TEXT,
+  left_image TEXT,
+  right_image TEXT,
+  winner TEXT CHECK (winner IN ('left','right')),
+  active INTEGER NOT NULL DEFAULT 1,
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS sessions (
   token_hash TEXT PRIMARY KEY,
   kind TEXT NOT NULL CHECK (kind IN ('admin','player')),

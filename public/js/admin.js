@@ -1,4 +1,4 @@
-import { h, sheet, closeSheet, sheetIsOpen, toast, busy, statusChip, fmtDate, rankingList, confirmSheet, tier, CATEGORY } from './dom.js';
+import { h, sheet, closeSheet, sheetIsOpen, toast, busy, statusChip, fmtDate, rankingList, confirmSheet, tier, versusCard, CATEGORY } from './dom.js';
 import { get, post, patch, del } from './api.js';
 
 const STATUS_LABEL = { setup: 'PREPARAÇÃO', active: 'EM ANDAMENTO', finished: 'ENCERRADA' };
@@ -11,7 +11,7 @@ const EVENT_LABEL = {
 };
 
 export function startAdmin(root, logout) {
-  const st = { tab: 'ops', data: null, catalog: null, events: null, filter: 'todas', open: new Set() };
+  const st = { tab: 'ops', ann: [], data: null, catalog: null, events: null, filter: 'todas', open: new Set() };
   const main = h('main');
   const nav = h('nav', { class: 'nav' });
   root.replaceChildren(h('div', { class: 'shell' },
@@ -21,6 +21,10 @@ export function startAdmin(root, logout) {
 
   async function load() {
     st.data = await get('/api/admin/overview');
+    st.ann = (await get('/api/admin/announcements')).announcements.map((a) => ({
+      id: a.id, title: a.title, subtitle: a.subtitle, body: a.body, winner: a.winner, active: !!a.active,
+      left: { name: a.left_name, image: a.left_image && `/api/assets/${a.left_image}` }, right: { name: a.right_name, image: a.right_image && `/api/assets/${a.right_image}` },
+    }));
     if (st.tab === 'missions') st.catalog = await get('/api/admin/missions');
     if (st.tab === 'log') st.events = (await get('/api/admin/events')).events;
   }
@@ -82,7 +86,7 @@ export function startAdmin(root, logout) {
       h('div', { class: 'row between', style: 'margin-top:16px' }, h('h1', { style: 'font-size:20px' }, g.name), h('span', { class: 'chip red' }, STATUS_LABEL[g.status])),
       g.doubleEnabled && h('div', { class: 'card red double-banner', style: 'margin-top:12px' }, h('small', {}, '🕵️‍♂️ AGENTE DUPLO · SÓ VOCÊ VÊ'),
         h('b', {}, d.doubleAgent ? d.doubleAgent.name : '— ainda não sorteado —')),
-      h('div', { style: 'margin-top:12px' }), ...controls,
+      h('div', { style: 'margin-top:12px' }), st.ann.map(announcementAdmin), ...controls,
       d.flagrantes.length > 0 && h('h2', {}, `🚨 Flagrantes (${d.flagrantes.length})`),
       d.flagrantes.map(flagranteCard),
       d.pending.length > 0 && h('h2', {}, `🔎 Em análise (${d.pending.length})`),
@@ -95,6 +99,17 @@ export function startAdmin(root, logout) {
         h('label', { class: 'check' }, dbl, 'Usar Agente Duplo (lê os desafios de todos)'), save,
         h('p', { class: 'muted', style: 'font-size:13px' }, 'A pontuação é de cada desafio (1, 2, 3 ou 5) e se edita na aba Missões. O Agente Duplo só liga/desliga antes de iniciar.')),
       g.status !== 'finished' && h('div', {}, newGameButton('＋ Nova partida (encerra a atual)')));
+  }
+
+  function announcementAdmin(a) {
+    const set = (patchBody, ok) => (e) => act(e.target, () => patch(`/api/admin/announcements/${a.id}`, patchBody), ok);
+    return h('div', { class: a.active ? '' : 'muted' },
+      versusCard(a),
+      h('div', { class: 'row', style: 'margin:-4px 0 12px' },
+        h('button', { class: 'btn small', onclick: set({ winner: 'left' }, `${a.left.name} venceu`) }, `🏆 ${a.left.name}`),
+        h('button', { class: 'btn small', onclick: set({ winner: 'right' }, `${a.right.name} venceu`) }, `🏆 ${a.right.name}`),
+        a.winner && h('button', { class: 'btn small', onclick: set({ winner: null }, 'Resultado limpo') }, 'Limpar'),
+        h('button', { class: 'btn small', onclick: set({ active: !a.active }, a.active ? 'Aviso oculto' : 'Aviso visível') }, a.active ? '🙈 Ocultar' : '👁 Mostrar')));
   }
 
   function flagranteCard(f) {

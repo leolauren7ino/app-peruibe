@@ -145,9 +145,20 @@ async function applySeedCredentials(app) {
   db.prepare("INSERT INTO settings (key, value) VALUES ('seed_credentials_applied', '1')").run();
 }
 
+/** Anúncio do Clássico (uma única vez; depois o admin controla: resultado, ocultar). */
+function seedAnnouncements(app) {
+  const { db } = app;
+  if (db.prepare("SELECT 1 FROM settings WHERE key = 'classico_seeded'").get()) return;
+  db.prepare(`INSERT INTO announcements (kind, title, subtitle, body, left_name, right_name, left_image, right_image, created_at)
+              VALUES ('versus', 'O CLÁSSICO', 'SUPER FERAS', ?, 'Vovô Slavic', 'Brunão', 'classico-esquerda.jpg', 'classico-direita.jpg', ?)`)
+    .run('Vovô Slavic x Brunão se enfrentam em Super Feras. Quem ganhar controla o outro por todo o dia.', now());
+  db.prepare("INSERT INTO settings (key, value) VALUES ('classico_seeded', '1')").run();
+}
+
 /** Primeira execução: partida com os 9 agentes, já sorteada (ainda não iniciada). Bancos antigos são atualizados. */
 async function seedIfEmpty(app) {
   const { db, cfg, key } = app;
+  seedAnnouncements(app);
   const changed = ensureCatalog(app);
   syncSeedTexts(app); // o título de Moya usa [ALVO] para não entregar o nome de quem tem "nome oculto"
   const existing = currentGame(db);
