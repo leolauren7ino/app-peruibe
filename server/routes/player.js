@@ -2,7 +2,7 @@ import { HANDLED, HttpError, int, str } from '../http.js';
 import { needPlayer, needAnyone } from '../guards.js';
 import {
   assignmentsOf, assignmentsOfGame, assignmentView, computeStats, logEvent, missionPoints, participantsOf, publicRanking, currentGame,
-  visibleDay, LOST, PASSES_PER_AGENT,
+  visibleDay, shownName, shownNick, LOST, PASSES_PER_AGENT,
 } from '../game.js';
 import { saveEvidence, removeEvidence, sendEvidence } from '../evidence.js';
 import { now } from '../db.js';
@@ -112,7 +112,7 @@ export function playerRoutes(router, app) {
   router.add('GET', '/api/me/flagrantes', (ctx) => {
     const { p, game } = needPlayer(ctx);
     return {
-      flagrantes: db.prepare(`SELECT f.id, f.status, f.guess, f.created_at, t.name AS accused FROM flagrantes f
+      flagrantes: db.prepare(`SELECT f.id, f.status, f.guess, f.created_at, COALESCE(NULLIF(t.alias, ''), t.name) AS accused FROM flagrantes f
                               JOIN participants t ON t.id = f.accused_id WHERE f.accuser_id = ? AND f.game_id = ? ORDER BY f.id DESC`).all(p.id, game.id),
     };
   });
@@ -151,7 +151,7 @@ export function playerRoutes(router, app) {
       .map((o) => {
         const s = stats.find((x) => x.id === o.id);
         return {
-          id: o.id, name: o.name, nickname: o.nickname,
+          id: o.id, name: shownName(o), nickname: shownNick(o),
           points: s.points, done: s.done, total: s.total, percent: s.percent, position: s.position,
           missions: rows.filter((r) => r.participant_id === o.id).map((r) => {
             const v = assignmentView(r, game);

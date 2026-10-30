@@ -5,7 +5,7 @@ import { loadConfig, ROOT } from './config.js';
 import { openDb, tx, now } from './db.js';
 import { loadSecretKey, LoginLimiter, readSession, hashPassword, verifyPassword, generatePassword } from './security.js';
 import { createRouter, HANDLED, HttpError, parseCookies, readJson, sendJson, serveStatic } from './http.js';
-import { addParticipant, currentGame, drawAllMissions } from './game.js';
+import { addParticipant, currentGame, drawAllMissions, setPassword } from './game.js';
 import { authRoutes } from './routes/auth.js';
 import { playerRoutes } from './routes/player.js';
 import { adminRoutes } from './routes/admin.js';
@@ -67,12 +67,42 @@ function ensureCatalog(app) {
   return true;
 }
 
+/**
+ * Senhas escolhidas à mão ficam em data/credenciais.json ({ "Nome do agente": "SENHA" }), fora do git.
+ * Aplicadas uma única vez (depois, edições feitas no painel prevalecem). Nomes ocultos vêm do seed.
+ */
+const readCredentials = (cfg) => {
+  const file = path.join(cfg.dataDir, 'credenciais.json');
+  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : {};
+};
+
+async function applySeedCredentials(app) {
+  const { db, key, cfg } = app;
+  const game = currentGame(db);
+  if (!game) return;
+  const people = JSON.parse(fs.readFileSync(path.join(ROOT, 'server/seed/participants.json'), 'utf8'));
+  for (const sp of people) {
+    const p = db.prepare('SELECT * FROM participants WHERE game_id = ? AND name = ?').get(game.id, sp.name);
+    if (p && sp.alias && !p.alias) db.prepare('UPDATE participants SET alias = ? WHERE id = ?').run(sp.alias, p.id);
+  }
+  const creds = readCredentials(cfg);
+  if (!Object.keys(creds).length || db.prepare("SELECT 1 FROM settings WHERE key = 'seed_credentials_applied'").get()) return;
+  for (const [name, pw] of Object.entries(creds)) {
+    const p = db.prepare('SELECT * FROM participants WHERE game_id = ? AND name = ?').get(game.id, name);
+    if (p) await setPassword(db, key, p.id, pw);
+  }
+  db.prepare("INSERT INTO settings (key, value) VALUES ('seed_credentials_applied', '1')").run();
+}
+
 /** Primeira execução: partida com os 9 agentes, já sorteada (ainda não iniciada). Bancos antigos são atualizados. */
 async function seedIfEmpty(app) {
   const { db, cfg, key } = app;
   const changed = ensureCatalog(app);
+  // o título não deve entregar o nome de quem tem "nome oculto"
+  db.prepare("UPDATE missions SET title = 'Missão [ALVO]' WHERE title = 'Missão Moya'").run();
   const existing = currentGame(db);
   if (existing) {
+    await applySeedCredentials(app);
     if (!changed) return;
     if (existing.status === 'setup') {
       db.prepare('DELETE FROM assignments WHERE game_id = ?').run(existing.id);
@@ -86,7 +116,9 @@ async function seedIfEmpty(app) {
   const r = db.prepare('INSERT INTO games (name, start_date, created_at) VALUES (?, ?, ?)').run('Peruibiza 4ª Edição', '2026-10-30', now());
   const game = db.prepare('SELECT * FROM games WHERE id = ?').get(r.lastInsertRowid);
   const people = JSON.parse(fs.readFileSync(path.join(ROOT, 'server/seed/participants.json'), 'utf8'));
-  for (const p of people) await addParticipant(db, key, game, p);
+  const creds = readCredentials(cfg);
+  for (const p of people) await addParticipant(db, key, game, { ...p, password: creds[p.name] });
+  if (Object.keys(creds).length) db.prepare("INSERT INTO settings (key, value) VALUES ('seed_credentials_applied', '1')").run();
   drawAllMissions(db, cfg.dataDir, game);
   app.notes.push(`Partida "${game.name}" criada com ${people.length} agentes e já sorteada. Entre como admin para ver as senhas e iniciar a operação.`);
 }

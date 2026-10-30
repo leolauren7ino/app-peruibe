@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS participants (
   game_id INTEGER NOT NULL REFERENCES games(id) ON DELETE CASCADE,
   name TEXT NOT NULL,
   nickname TEXT,
+  alias TEXT,
   pw_hash TEXT NOT NULL,
   pw_enc TEXT NOT NULL,
   restricted_romantic INTEGER NOT NULL DEFAULT 0,
@@ -115,6 +116,7 @@ function migrate(db) {
   for (const [col, ddl] of [['unlocked_day', 'INTEGER NOT NULL DEFAULT 0'], ['double_enabled', 'INTEGER NOT NULL DEFAULT 0'], ['start_date', 'TEXT']]) {
     if (!columns(db, 'games').includes(col)) db.exec(`ALTER TABLE games ADD COLUMN ${col} ${ddl}`);
   }
+  if (!columns(db, 'participants').includes('alias')) db.exec('ALTER TABLE participants ADD COLUMN alias TEXT');
   if (!columns(db, 'missions').includes('level')) return;
   db.exec('PRAGMA foreign_keys = OFF');
   db.exec('BEGIN');

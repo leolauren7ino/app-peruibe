@@ -2,11 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { tx, now } from './db.js';
 import { normalize, encrypt, decrypt, hashPassword, generatePassword, normalizePassword } from './security.js';
-import { drawMissions, pickTarget, shuffle, dayAllowed, DrawError } from './draw.js';
+import { drawMissions, pickTarget, shuffle, DrawError } from './draw.js';
 import { HttpError } from './http.js';
 
-/** Até que dia os desafios estão liberados para os agentes (tudo aberto depois do encerramento). */
-export const visibleDay = (game) => (game.status === 'finished' ? 3 : game.status === 'active' ? game.unlocked_day : 0);
+/** Os desafios valem a viagem toda: depois de iniciar, todos ficam visíveis ao dono (mantido como função para facilitar mudar a regra). */
+export const visibleDay = (game) => (game.status === 'setup' ? 0 : 3);
 
 export const currentGame = (db) => db.prepare('SELECT * FROM games ORDER BY id DESC LIMIT 1').get() || null;
 
@@ -18,6 +18,10 @@ export function requireGame(db) {
 
 export const participantsOf = (db, gameId) =>
   db.prepare('SELECT * FROM participants WHERE game_id = ? ORDER BY id').all(gameId);
+
+/** Nome que os outros agentes veem: o "nome oculto" (ex.: "?") quando existe. Só o admin e o próprio agente veem o real. */
+export const shownName = (p) => (p.alias ? p.alias : p.name);
+export const shownNick = (p) => (p.alias ? null : p.nickname);
 
 export const label = (p) => (p ? (p.nickname ? `${p.name} (${p.nickname})` : p.name) : null);
 
@@ -34,13 +38,13 @@ export function logEvent(db, game, { type, participant = null, assignmentId = nu
 }
 
 /** Missão como o dono a enxerga: texto com {alvo} resolvido e pontos calculados. */
-export function assignmentView(row, game) {
-  const target = row.target_label || row.target_name || 'o alvo';
+export function assignmentView(row, game, { real = false } = {}) {
+  const target = (real ? row.target_real : row.target_label) || row.target_name || 'o alvo';
   return {
     id: row.id,
     number: row.position,
     day: row.position,
-    title: row.title,
+    title: row.title.replace(TARGET_TOKEN, target),
     description: row.description.replace(TARGET_TOKEN, target),
     category: row.category,
     points: row.points_awarded ?? missionPoints(row),
@@ -56,6 +60,10 @@ export function assignmentView(row, game) {
 const ASSIGN_SQL = `
   SELECT a.*, m.title, m.description, m.category, m.points, m.romantic, m.target AS mission_target,
          CASE WHEN t.id IS NULL THEN NULL
+              WHEN t.nickname IS NULL OR t.nickname = '' THEN t.name
+              ELSE t.name || ' (' || t.nickname || ')' END AS target_real,
+         CASE WHEN t.id IS NULL THEN NULL
+              WHEN t.alias IS NOT NULL AND t.alias != '' THEN t.alias
               WHEN t.nickname IS NULL OR t.nickname = '' THEN t.name
               ELSE t.name || ' (' || t.nickname || ')' END AS target_label
   FROM assignments a
@@ -81,8 +89,8 @@ export function computeStats(db, game) {
     const passes = mine.filter((r) => r.status === 'passe').length;
     return {
       id: p.id,
-      name: p.name,
-      nickname: p.nickname,
+      name: shownName(p),
+      nickname: shownNick(p),
       points: done.reduce((s, r) => s + (r.points_awarded ?? missionPoints(r)), 0) + (adj.get(p.id) || 0),
       adjustments: adj.get(p.id) || 0,
       done: done.length,
@@ -120,16 +128,16 @@ export function sanitizeName(raw) {
   return name;
 }
 
-export async function addParticipant(db, key, game, { name, nickname = '', restrictedRomantic = false, password }) {
+export async function addParticipant(db, key, game, { name, nickname = '', alias = '', restrictedRomantic = false, password }) {
   name = sanitizeName(name);
   const plain = password ? normalizePassword(password) : null;
   if (password && plain.length < 4) throw new HttpError(400, 'Senha muito curta (mín. 4 caracteres).');
   const shown = password ? String(password).trim() : generatePassword();
   const hash = await hashPassword(normalizePassword(shown));
   try {
-    const r = db.prepare(`INSERT INTO participants (game_id, name, nickname, pw_hash, pw_enc, restricted_romantic, created_at)
-                          VALUES (?,?,?,?,?,?,?)`)
-      .run(game.id, name, String(nickname).trim() || null, hash, encrypt(key, shown), restrictedRomantic ? 1 : 0, now());
+    const r = db.prepare(`INSERT INTO participants (game_id, name, nickname, alias, pw_hash, pw_enc, restricted_romantic, created_at)
+                          VALUES (?,?,?,?,?,?,?,?)`)
+      .run(game.id, name, String(nickname).trim() || null, String(alias).trim().slice(0, 30) || null, hash, encrypt(key, shown), restrictedRomantic ? 1 : 0, now());
     return Number(r.lastInsertRowid);
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) throw new HttpError(409, 'Já existe um agente com esse nome.');
@@ -257,7 +265,7 @@ export function swapAssignment(db, dataDir, game, assignmentId, wantedMissionId 
   const me = people.find((p) => p.id === a.participant_id);
   const used = new Set(db.prepare('SELECT mission_id FROM assignments WHERE game_id = ? AND id != ?').all(game.id, a.id).map((r) => r.mission_id));
   const load = targetLoadOf(db, game.id);
-  const ok = (m) => !used.has(m.id) && m.id !== a.mission_id && dayAllowed(m, a.position) && !(me.restricted_romantic && m.romantic) && m.target !== me.id;
+  const ok = (m) => !used.has(m.id) && m.id !== a.mission_id && !(me.restricted_romantic && m.romantic) && m.target !== me.id;
   const catalog = resolveCatalog(db, people).filter(ok);
 
   let pool;
@@ -313,6 +321,6 @@ export function startGame(db, game) {
   if (!people.length || people.some((p) => byId.get(p.id) !== 3) || orphans) {
     throw new HttpError(409, 'Sorteie as missões novamente: a lista de agentes mudou depois do sorteio.');
   }
-  db.prepare("UPDATE games SET status = 'active', started_at = ?, unlocked_day = 1 WHERE id = ?").run(now(), game.id);
+  db.prepare("UPDATE games SET status = 'active', started_at = ?, unlocked_day = 3 WHERE id = ?").run(now(), game.id);
   logEvent(db, game, { type: 'inicio' });
 }

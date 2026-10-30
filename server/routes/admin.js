@@ -55,12 +55,12 @@ export function adminRoutes(router, app) {
     const rows = assignmentsOfGame(db, g.id);
     const stats = computeStats(db, g);
     const participants = people.map((p) => ({
-      id: p.id, name: p.name, nickname: p.nickname, restrictedRomantic: !!p.restricted_romantic,
+      id: p.id, name: p.name, nickname: p.nickname, alias: p.alias, restrictedRomantic: !!p.restricted_romantic,
       password: revealPassword(key, p),
       isDouble: !!g.double_enabled && g.double_agent_id === p.id,
       stats: stats.find((s) => s.id === p.id),
       missions: rows.filter((r) => r.participant_id === p.id).map((r) => ({
-        ...assignmentView(r, g), missionId: r.mission_id, targetLabel: r.target_label || r.target_name, romantic: !!r.romantic,
+        ...assignmentView(r, g, { real: true }), missionId: r.mission_id, targetLabel: r.target_label || r.target_name, romantic: !!r.romantic,
       })),
     }));
     const double = g.double_enabled ? people.find((p) => p.id === g.double_agent_id) : null;
@@ -123,17 +123,6 @@ export function adminRoutes(router, app) {
     return { ok: true };
   });
 
-  // Libera os desafios de um dia (1 = sexta, 2 = sábado, 3 = domingo).
-  admin('/api/admin/day', 'POST', (ctx) => {
-    const g = game();
-    if (g.status !== 'active') throw new HttpError(409, 'A operação não está em andamento.');
-    const day = int(ctx.body.day, 'dia');
-    if (day > 3) throw new HttpError(400, 'Dia inválido (1 a 3).');
-    db.prepare('UPDATE games SET unlocked_day = ? WHERE id = ?').run(day, g.id);
-    logEvent(db, g, { type: 'dia_liberado', detail: `dia ${day}` });
-    return { ok: true };
-  });
-
   // Flagrante aceito: o desafio descoberto é perdido pelo dono e quem descobriu ganha 1 ponto.
   admin('/api/admin/flagrantes/:id/accept', 'POST', (ctx) => {
     const g = game();
@@ -193,7 +182,7 @@ export function adminRoutes(router, app) {
     const g = game();
     if (g.status === 'finished') throw new HttpError(409, 'A partida foi encerrada.');
     const id = await addParticipant(db, key, g, {
-      name: ctx.body.name, nickname: str(ctx.body.nickname, 'Apelido', { max: 40, required: false }),
+      name: ctx.body.name, nickname: str(ctx.body.nickname, 'Apelido', { max: 40, required: false }), alias: str(ctx.body.alias, 'Nome oculto', { max: 30, required: false }),
       restrictedRomantic: !!ctx.body.restrictedRomantic, password: ctx.body.password || null,
     });
     // Em operação em andamento, o novo agente recebe suas 3 missões na hora; os demais não mudam.
@@ -213,8 +202,9 @@ export function adminRoutes(router, app) {
     const name = b.name !== undefined ? sanitizeName(b.name) : p.name;
     const restricted = b.restrictedRomantic !== undefined ? (b.restrictedRomantic ? 1 : 0) : p.restricted_romantic;
     try {
-      db.prepare('UPDATE participants SET name = ?, nickname = ?, restricted_romantic = ? WHERE id = ?').run(
-        name, b.nickname !== undefined ? str(b.nickname, 'Apelido', { max: 40, required: false }) || null : p.nickname, restricted, p.id);
+      db.prepare('UPDATE participants SET name = ?, nickname = ?, alias = ?, restricted_romantic = ? WHERE id = ?').run(
+        name, b.nickname !== undefined ? str(b.nickname, 'Apelido', { max: 40, required: false }) || null : p.nickname,
+        b.alias !== undefined ? str(b.alias, 'Nome oculto', { max: 30, required: false }) || null : p.alias, restricted, p.id);
     } catch (e) {
       if (String(e.message).includes('UNIQUE')) throw new HttpError(409, 'Já existe um agente com esse nome.');
       throw e;

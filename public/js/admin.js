@@ -1,4 +1,4 @@
-import { h, sheet, closeSheet, sheetIsOpen, toast, busy, statusChip, fmtDate, rankingList, confirmSheet, tier, dayLabel, CATEGORY } from './dom.js';
+import { h, sheet, closeSheet, sheetIsOpen, toast, busy, statusChip, fmtDate, rankingList, confirmSheet, tier, CATEGORY } from './dom.js';
 import { get, post, patch, del } from './api.js';
 
 const STATUS_LABEL = { setup: 'PREPARAÇÃO', active: 'EM ANDAMENTO', finished: 'ENCERRADA' };
@@ -7,7 +7,7 @@ const EVENT_LABEL = {
   enviada: '📨 Enviou para análise', desfeita: '↩ Desfez o envio', concluida: '✅ Concluiu (automático)', confirmada: '✅ Confirmada',
   devolvida: '↩ Devolvida', resetada: '♻ Resetada', troca: '🔀 Missão trocada', encerrada: '🏁 Partida encerrada',
   agente_removido: '🗑 Agente removido', missoes_novo_agente: '🎲 Missões do novo agente', passe: '🎫 Usou ficha de passe',
-  flagrante_denuncia: '🚨 Denunciou flagrante', flagrante: '🚨 Flagrante aceito', ajuste: '± Ajuste de pontos', dia_liberado: '🔓 Dia liberado',
+  flagrante_denuncia: '🚨 Denunciou flagrante', flagrante: '🚨 Flagrante aceito', ajuste: '± Ajuste de pontos', 
 };
 
 export function startAdmin(root, logout) {
@@ -58,7 +58,6 @@ export function startAdmin(root, logout) {
     if (!d.game) return noGame();
     const g = d.game;
     const ask = (msg, fn, ok, danger) => async (e) => { if (await confirmSheet(msg, { ok: 'Sim', danger })) act(e.target, fn, ok); };
-    const when = (n) => dayLabel(g.startDate, n);
 
     const controls = [];
     if (g.status === 'setup') {
@@ -66,20 +65,18 @@ export function startAdmin(root, logout) {
         h('div', { class: 'row' },
           g.doubleEnabled && h('button', { class: 'btn', onclick: (e) => act(e.target, () => post('/api/admin/draw/double'), 'Agente Duplo sorteado') }, '🎲 Sortear duplo'),
           h('button', { class: 'btn', onclick: (e) => act(e.target, () => post('/api/admin/draw/missions'), 'Desafios sorteados') }, '🎲 Sortear desafios')),
-        h('button', { class: 'btn primary', onclick: ask('Iniciar a operação? Isso TRAVA o sorteio e libera o desafio do dia 1 para todos.', () => post('/api/admin/start'), 'Operação iniciada!') }, '▶ Iniciar operação'));
+        h('button', { class: 'btn primary', onclick: ask('Iniciar a operação? Isso TRAVA o sorteio e libera os desafios para todos os agentes.', () => post('/api/admin/start'), 'Operação iniciada!') }, '▶ Iniciar operação'));
     } else if (g.status === 'active') {
-      const next = g.unlockedDay + 1;
       controls.push(
-        h('div', { class: 'card' }, h('div', { class: 'muted mono', style: 'font-size:12px' }, 'DESAFIOS LIBERADOS'),
-          h('b', {}, `Dia ${g.unlockedDay} de 3 · ${when(g.unlockedDay)}`),
-          next <= 3 && h('button', { class: 'btn primary', onclick: ask(`Liberar os desafios do dia ${next} (${when(next)}) para todos os agentes?`, () => post('/api/admin/day', { day: next }), `Dia ${next} liberado`) }, `🔓 Liberar dia ${next} · ${when(next)}`)),
+        h('div', { class: 'card' }, h('div', { class: 'muted mono', style: 'font-size:12px' }, 'OPERAÇÃO EM ANDAMENTO'),
+          h('b', {}, 'Todos os desafios liberados durante a viagem.'),
+          h('div', { class: 'muted', style: 'font-size:13px;margin-top:4px' }, `${d.pending.length} em análise · ${d.flagrantes.length} flagrante(s) esperando julgamento`)),
         h('button', { class: 'btn danger', onclick: ask('Encerrar a partida? Os desafios de todo mundo são revelados e ninguém mais envia nada.', () => post('/api/admin/finish'), 'Partida encerrada', true) }, '🏁 Encerrar e revelar'));
     } else controls.push(newGameButton());
 
-    const start = h('input', { type: 'date', value: g.startDate || '' });
     const auto = h('input', { type: 'checkbox', checked: g.autoConfirm });
     const dbl = h('input', { type: 'checkbox', checked: g.doubleEnabled, disabled: g.status !== 'setup' });
-    const save = h('button', { class: 'btn', onclick: () => act(save, () => patch('/api/admin/game', { startDate: start.value, autoConfirm: auto.checked, doubleEnabled: dbl.checked }), 'Configurações salvas') }, 'Salvar configurações');
+    const save = h('button', { class: 'btn', onclick: () => act(save, () => patch('/api/admin/game', { autoConfirm: auto.checked, doubleEnabled: dbl.checked }), 'Configurações salvas') }, 'Salvar configurações');
 
     return h('div', {},
       h('div', { class: 'row between', style: 'margin-top:16px' }, h('h1', { style: 'font-size:20px' }, g.name), h('span', { class: 'chip red' }, STATUS_LABEL[g.status])),
@@ -94,7 +91,6 @@ export function startAdmin(root, logout) {
       d.participants.map(participantCard),
       h('h2', {}, 'Configurações'),
       h('div', { class: 'card' },
-        h('label', {}, 'Data da sexta (dia 1)'), start,
         h('label', { class: 'check' }, auto, 'Aprovar automaticamente (sem fila de análise)'),
         h('label', { class: 'check' }, dbl, 'Usar Agente Duplo (lê todos os desafios; desligado por padrão)'), save,
         h('p', { class: 'muted', style: 'font-size:13px' }, 'A pontuação é de cada desafio (1, 2, 3 ou 5) e se edita na aba Missões. O Agente Duplo só liga/desliga antes de iniciar.')),
@@ -107,7 +103,7 @@ export function startAdmin(root, logout) {
       h('div', { class: 'mini' }, h('div', { class: 'd' }, `💬 ${f.guess}`)),
       h('div', { class: 'muted mono', style: 'font-size:12px' }, 'DESAFIOS EM ABERTO DO ACUSADO — TOQUE NO QUE FOI DESCOBERTO:'),
       f.candidates.length === 0 && h('div', { class: 'muted' }, 'Nenhum desafio em aberto.'),
-      f.candidates.map((m) => h('div', { class: 'mini' }, h('div', { class: 't' }, `${tier(m.points).icon} Dia ${m.day} · ${m.title}`), h('div', { class: 'd' }, m.description),
+      f.candidates.map((m) => h('div', { class: 'mini' }, h('div', { class: 't' }, `${tier(m.points).icon} Desafio ${m.day} · ${m.title}`), h('div', { class: 'd' }, m.description),
         h('button', { class: 'btn small primary', onclick: async (e) => {
           if (await confirmSheet(`Aceitar o flagrante? ${f.accusedName} perde "${m.title}" e ${f.accuserName} ganha 1 ponto.`, { ok: 'Aceitar' })) {
             act(e.target, () => post(`/api/admin/flagrantes/${f.id}/accept`, { assignmentId: m.id }), 'Flagrante aceito');
@@ -119,7 +115,7 @@ export function startAdmin(root, logout) {
   function pendingCard(m) {
     return h('div', { class: 'card' },
       h('div', { class: 'row between' }, h('b', {}, m.participantName), h('span', { class: 'chip' }, `${m.points} pt${m.points > 1 ? 's' : ''}`)),
-      h('div', { class: 'mini' }, h('div', { class: 't' }, `${tier(m.points).icon} Dia ${m.day} · ${m.title}`), h('div', { class: 'd' }, m.description),
+      h('div', { class: 'mini' }, h('div', { class: 't' }, `${tier(m.points).icon} Desafio ${m.day} · ${m.title}`), h('div', { class: 'd' }, m.description),
         m.note && h('div', {}, `💬 ${m.note}`), h('div', { class: 'muted mono', style: 'font-size:11px' }, `Enviado ${fmtDate(m.submittedAt)}`)),
       m.hasEvidence && h('img', { class: 'ev-thumb', src: `/api/admin/assignments/${m.id}/evidence`, alt: 'evidência', loading: 'lazy',
         onclick: () => sheet(m.title, h('img', { class: 'ev', src: `/api/admin/assignments/${m.id}/evidence`, alt: 'evidência' }), h('button', { class: 'btn', onclick: closeSheet }, 'Fechar')) }),
@@ -154,7 +150,7 @@ export function startAdmin(root, logout) {
   function missionRow(m, p) {
     const closed = ['flagrante', 'passe'].includes(m.status);
     return h('div', { class: 'mini' },
-      h('div', { class: 'row between' }, h('span', { class: 't' }, `${tier(m.points).icon} Dia ${m.day} · ${m.title}`), statusChip(m.status)),
+      h('div', { class: 'row between' }, h('span', { class: 't' }, `${tier(m.points).icon} Desafio ${m.day} · ${m.title}`), statusChip(m.status)),
       h('div', { class: 'd' }, m.description),
       h('div', { class: 'row' },
         !closed && m.status !== 'concluida' && h('button', { class: 'btn small primary', onclick: (e) => act(e.target, () => post(`/api/admin/assignments/${m.id}/confirm`), 'Confirmado') }, '✔ Confirmar'),
@@ -168,14 +164,15 @@ export function startAdmin(root, logout) {
     if (!d.game) return noGame();
     const name = h('input', { type: 'text', placeholder: 'Nome completo' });
     const nick = h('input', { type: 'text', placeholder: 'Apelido (opcional)' });
+    const alias = h('input', { type: 'text', placeholder: 'Nome oculto, ex.: ? (opcional)', maxlength: 30 });
     const restricted = h('input', { type: 'checkbox' });
     const add = h('button', { class: 'btn primary', onclick: () => act(add, async () => {
-      const r = await post('/api/admin/participants', { name: name.value, nickname: nick.value, restrictedRomantic: restricted.checked });
+      const r = await post('/api/admin/participants', { name: name.value, nickname: nick.value, alias: alias.value, restrictedRomantic: restricted.checked });
       toast(`Senha de ${name.value}: ${r.password}`, 'ok');
     }) }, '＋ Adicionar agente');
     return h('div', {},
       h('h2', {}, 'Novo agente'),
-      h('div', { class: 'card' }, h('label', {}, 'Nome'), name, h('label', {}, 'Apelido'), nick,
+      h('div', { class: 'card' }, h('label', {}, 'Nome'), name, h('label', {}, 'Apelido'), nick, h('label', {}, 'Nome oculto (aparece para os outros no lugar do nome)'), alias,
         h('label', { class: 'check' }, restricted, 'Sem missões de flerte/ficar (relacionamento sério)'), add,
         d.game.status === 'active' && h('p', { class: 'muted', style: 'font-size:13px' }, 'Com a operação em andamento, o novo agente recebe 3 missões na hora e ninguém mais muda.'),
         d.game.status === 'setup' && h('p', { class: 'muted', style: 'font-size:13px' }, 'Depois de mudar a lista de agentes, refaça o sorteio antes de iniciar.')),
@@ -189,7 +186,7 @@ export function startAdmin(root, logout) {
     return h('div', { class: 'card' },
       h('div', { class: 'row between' },
         h('div', {}, h('b', {}, p.isDouble && '🕵️‍♂️ ', p.name), p.nickname && h('span', { class: 'muted' }, ` “${p.nickname}”`)),
-        p.restrictedRomantic && h('span', { class: 'chip' }, 'sem flerte')),
+        p.alias && h('span', { class: 'chip red' }, `aparece como ${p.alias}`), p.restrictedRomantic && h('span', { class: 'chip' }, 'sem flerte')),
       pw,
       h('div', { class: 'row' },
         h('button', { class: 'btn small', onclick: () => navigator.clipboard?.writeText(p.password).then(() => toast('Senha copiada', 'ok')).catch(() => toast(p.password)) }, '📋 Copiar'),
@@ -200,10 +197,11 @@ export function startAdmin(root, logout) {
   function editAgent(p) {
     const name = h('input', { type: 'text', value: p.name });
     const nick = h('input', { type: 'text', value: p.nickname || '' });
+    const alias = h('input', { type: 'text', value: p.alias || '', placeholder: 'vazio = aparece o nome real', maxlength: 30 });
     const restricted = h('input', { type: 'checkbox', checked: p.restrictedRomantic });
     const pass = h('input', { type: 'text', placeholder: 'Deixe vazio para manter', autocapitalize: 'characters' });
     const save = h('button', { class: 'btn primary', onclick: () => act(save, async () => {
-      await patch(`/api/admin/participants/${p.id}`, { name: name.value, nickname: nick.value, restrictedRomantic: restricted.checked, password: pass.value || undefined });
+      await patch(`/api/admin/participants/${p.id}`, { name: name.value, nickname: nick.value, alias: alias.value, restrictedRomantic: restricted.checked, password: pass.value || undefined });
       closeSheet();
     }, 'Agente atualizado') }, 'Salvar');
     const regen = h('button', { class: 'btn', onclick: () => act(regen, async () => {
@@ -214,7 +212,7 @@ export function startAdmin(root, logout) {
         act(remove, () => del(`/api/admin/participants/${p.id}`), 'Agente removido');
       }
     } }, '🗑 Remover agente');
-    sheet(`Editar ${p.name}`, h('label', {}, 'Nome'), name, h('label', {}, 'Apelido'), nick,
+    sheet(`Editar ${p.name}`, h('label', {}, 'Nome'), name, h('label', {}, 'Apelido'), nick, h('label', {}, 'Nome oculto (os outros veem isto)'), alias,
       h('label', { class: 'check' }, restricted, 'Sem missões de flerte/ficar'), h('label', {}, 'Nova senha (opcional)'), pass, save, regen, remove);
   }
 

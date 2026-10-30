@@ -3,12 +3,11 @@ import crypto from 'node:crypto';
 /**
  * Sorteio de desafios — função pura (sem banco), fácil de testar e ajustar.
  *
- * Cada agente recebe 3 desafios, um por dia (position = 1, 2, 3).
+ * Cada agente recebe 3 desafios (position = 1, 2, 3 é só a ordem de exibição; valem a viagem toda).
  * Regras duras (violação = sorteio inválido):
  *   - nenhum desafio repetido na partida;
  *   - ninguém recebe desafio que leve o próprio nome (alvo fixo = dono);
  *   - agentes com `restricted` não recebem desafios `romantic`;
- *   - desafios de 5+ pontos só no último dia.
  * Regras suaves (otimizadas): pontuação total parecida entre agentes, alvos fixos distribuídos
  * por igual, sem repetir o mesmo alvo ou categoria para o mesmo agente.
  * Alvos sorteados ([ALVO], target '*') são escolhidos no fim, nunca o dono.
@@ -16,9 +15,6 @@ import crypto from 'node:crypto';
 export class DrawError extends Error {}
 
 export const DAYS = [1, 2, 3];
-export const LAST_DAY = 3;
-export const RISKY_POINTS = 5;
-export const dayAllowed = (m, day) => (m.points >= RISKY_POINTS ? day === LAST_DAY : true);
 
 export const secureRng = () => crypto.randomInt(0, 2 ** 32) / 2 ** 32;
 
@@ -62,8 +58,6 @@ export function drawMissions({ fill, everyone, missions, used = new Set(), targe
   if (pool.length < slots.length) {
     throw new DrawError(`Catálogo insuficiente: faltam ${slots.length - pool.length} desafio(s) ativos (precisa de ${slots.length}, há ${pool.length}).`);
   }
-  const lastSlots = slots.filter((s) => s.day === LAST_DAY).length;
-  if (pool.filter((m) => m.points >= RISKY_POINTS).length > 0 && lastSlots === 0) { /* sem último dia: arriscados simplesmente não entram */ }
 
   const fixedLoad = (assign) => {
     const load = { ...targetLoad };
@@ -78,9 +72,8 @@ export function drawMissions({ fill, everyone, missions, used = new Set(), targe
     const seenCats = new Map();
     let dups = 0;
     assign.forEach((mi, si) => {
-      const { p, day } = slots[si];
+      const { p } = slots[si];
       const m = pool[mi];
-      if (!dayAllowed(m, day)) violations++;
       if (p.restricted && m.romantic) violations++;
       if (m.target === p.id) violations++;
       totals.set(p.id, totals.get(p.id) + m.points);
@@ -101,16 +94,9 @@ export function drawMissions({ fill, everyone, missions, used = new Set(), targe
 
   let best = null;
   for (let r = 0; r < restarts; r++) {
-    // arriscados primeiro nos slots do último dia; o resto embaralhado
     const order = shuffle(pool.map((_, i) => i), rng);
-    const assign = new Array(slots.length).fill(-1);
-    const free = [];
-    const risky = order.filter((i) => pool[i].points >= RISKY_POINTS);
-    const rest = order.filter((i) => pool[i].points < RISKY_POINTS);
-    const lastIdx = shuffle(slots.map((s, i) => (s.day === LAST_DAY ? i : -1)).filter((i) => i >= 0), rng);
-    for (const si of lastIdx) if (risky.length) assign[si] = risky.shift();
-    free.push(...risky, ...rest);
-    for (let si = 0; si < assign.length; si++) if (assign[si] < 0) assign[si] = free.shift();
+    const assign = order.slice(0, slots.length);
+    const free = order.slice(slots.length);
     const unused = new Set(free);
 
     let cur = evaluate(assign);

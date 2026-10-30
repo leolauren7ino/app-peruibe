@@ -39,6 +39,7 @@ const PNG = 'data:image/png;base64,' + Buffer.from([0x89, 0x50, 0x4e, 0x47, 1, 2
 
 before(async () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'peruibe-'));
+  fs.writeFileSync(path.join(dir, 'credenciais.json'), JSON.stringify({ 'Leo Laurentino': 'TESTE-LEO-11', 'Murillo Moya': 'TESTE-MOYA-22' }));
   app = await createApp({ dataDir: dir, adminPassword: ADMIN, port: 0 });
   base = `http://127.0.0.1:${await app.listen()}`;
   admin = client();
@@ -76,17 +77,15 @@ test('admin vê tudo e agentes não acessam a área admin', async () => {
   const c = await loginAs('Baiano');
   for (const url of ['/api/admin/overview', '/api/admin/events', '/api/admin/missions']) assert.equal((await c.get(url)).status, 403, url);
   assert.equal((await c.post('/api/admin/start')).status, 403);
-  assert.equal((await c.post('/api/admin/day', { day: 3 })).status, 403);
 });
 
-test('sorteio: 1 desafio por dia, pontuação equilibrada, ninguém recebe desafio com o próprio nome', async () => {
+test('sorteio: 3 desafios por agente, pontuação equilibrada, ninguém recebe desafio com o próprio nome', async () => {
   const totals = overview.participants.map((p) => p.missions.reduce((s, m) => s + m.points, 0));
   assert.ok(Math.max(...totals) - Math.min(...totals) <= 2, `totais: ${totals}`);
   for (const p of overview.participants) {
     assert.deepEqual(p.missions.map((m) => m.day), [1, 2, 3]);
     assert.ok(p.missions.every((m) => !/\[ALVO\]|\{alvo\}/i.test(m.description)), 'alvo substituído');
     assert.ok(p.missions.every((m) => !m.description.includes(p.name)), `${p.name} recebeu desafio com o próprio nome`);
-    assert.ok(p.missions.filter((m) => m.points >= 5).every((m) => m.day === 3));
     if (p.restrictedRomantic) assert.ok(p.missions.every((m) => !m.romantic));
   }
 });
@@ -99,33 +98,43 @@ test('Agente Duplo é opcional: desligado por padrão, ligado só antes de inici
   assert.ok(overview.doubleAgent?.name);
 });
 
-test('iniciar trava o sorteio e libera só o dia 1', async () => {
+test('iniciar trava o sorteio', async () => {
   assert.equal((await admin.post('/api/admin/start')).status, 200);
   for (const u of ['/api/admin/draw/double', '/api/admin/draw/missions', '/api/admin/draw/all']) assert.equal((await admin.post(u)).status, 409, u);
   assert.equal((await admin.patch('/api/admin/game', { doubleEnabled: false })).status, 409);
   assert.equal((await ov()).doubleAgent.id, overview.doubleAgent.id);
 });
 
-test('cada agente vê só o desafio do dia 1; dias futuros chegam trancados e sem conteúdo', async () => {
+test('cada agente vê os 3 desafios (valem a viagem toda), nenhum trancado', async () => {
   for (const p of overview.participants) {
     players[p.name] = await loginAs(p.name);
     const me = await mine(p.name);
     assert.equal(me.missions.length, 3);
-    const [d1, d2, d3] = me.missions;
-    assert.equal(d1.locked, false);
-    assert.equal(d1.points, p.missions[0].points);
-    assert.deepEqual(d2, { number: 2, day: 2, locked: true });
-    assert.deepEqual(d3, { number: 3, day: 3, locked: true });
+    assert.ok(me.missions.every((m, i) => !m.locked && m.points === p.missions[i].points && m.title));
     assert.equal(me.role, p.isDouble ? 'AGENTE_DUPLO' : 'AGENTE_SECRETO');
   }
 });
 
-test('desafio de dia trancado não pode ser acionado nem enumerado', async () => {
-  const p = overview.participants.find((x) => x.name === 'Baiano');
-  const day2 = p.missions[1];
-  assert.equal((await players.Baiano.post(`/api/me/missions/${day2.id}/complete`, {})).status, 404);
-  assert.equal((await players.Baiano.post(`/api/me/missions/${day2.id}/pass`)).status, 404);
-  assert.ok(!JSON.stringify(await mine('Baiano')).includes(day2.title));
+test('nome oculto: os outros veem "?" no lugar de Murillo Moya; ele e o admin veem o real', async () => {
+  assert.equal(overview.participants.find((p) => p.alias === '?').name, 'Murillo Moya');
+  const everyoneElse = overview.participants.filter((p) => p.name !== 'Murillo Moya');
+  for (const p of everyoneElse) {
+    assert.ok(!/Murillo|Moya/.test(JSON.stringify(await mine(p.name))), `${p.name} viu o nome real`);
+    const ranking = (await players[p.name].get('/api/ranking')).body.ranking;
+    assert.ok(ranking.some((r) => r.name === '?'));
+    assert.ok(!/Murillo|Moya/.test(JSON.stringify(ranking)));
+  }
+  assert.equal((await mine('Murillo Moya')).name, 'Murillo Moya');
+  const holder = everyoneElse.find((p) => p.missions.some((m) => /5 cervejas/.test(m.description)));
+  assert.ok(holder, 'alguém recebeu a missão de Moya');
+  const m = (await mine(holder.name)).missions.find((x) => /5 cervejas/.test(x.description));
+  assert.ok(m.title.includes('?') && m.description.includes('?'));
+  assert.match(holder.missions.find((x) => /5 cervejas/.test(x.description)).description, /Murillo Moya/);
+});
+
+test('credenciais do seed: senha fixa funciona', async () => {
+  assert.equal((await client().post('/api/login', { name: 'Leo', password: 'TESTE-LEO-11' })).status, 200);
+  assert.equal((await client().post('/api/login', { name: 'moya', password: 'teste moya 22' })).status, 200);
 });
 
 test('IDOR: agente não consegue agir sobre desafio de outro nem ver a foto dele', async () => {
@@ -158,10 +167,10 @@ test('fluxo: enviar → em análise → admin confirma → pontos do desafio →
   assert.equal((await players.Baiano.get(`/api/me/missions/${d1.id}/evidence`)).status, 404);
   assert.equal((await admin.get(`/api/admin/assignments/${d1.id}/evidence`)).status, 200);
 
-  let row = (await players.Baiano.get('/api/ranking')).body.ranking.find((r) => r.name === name);
+  let row = (await players.Baiano.get('/api/ranking')).body.ranking.find((r) => r.name === '?');
   assert.equal(row.points, 0);
   assert.equal((await admin.post(`/api/admin/assignments/${d1.id}/confirm`)).status, 200);
-  row = (await players.Baiano.get('/api/ranking')).body.ranking.find((r) => r.name === name);
+  row = (await players.Baiano.get('/api/ranking')).body.ranking.find((r) => r.name === '?');
   assert.deepEqual([row.points, row.done, row.remaining, row.percent], [d1.points, 1, 2, 33]);
   assert.equal((await admin.post(`/api/admin/assignments/${d1.id}/confirm`)).status, 409);
   assert.equal((await players[name].post(`/api/me/missions/${d1.id}/complete`)).status, 409);
@@ -180,14 +189,6 @@ test('foto inválida é recusada', async () => {
   const fake = 'data:image/png;base64,' + Buffer.from('isto não é uma imagem').toString('base64');
   assert.equal((await players.Baiano.post(`/api/me/missions/${m.id}/complete`, { photo: fake })).status, 400);
   assert.equal((await players.Baiano.post(`/api/me/missions/${m.id}/complete`, { photo: 'data:text/html;base64,PGI+' })).status, 400);
-});
-
-test('liberar o dia 2 revela o desafio; dia 3 só depois', async () => {
-  assert.equal((await admin.post('/api/admin/day', { day: 2 })).status, 200);
-  const me = await mine('Baiano');
-  assert.equal(me.missions[1].locked, false);
-  assert.equal(me.missions[2].locked, true);
-  assert.equal((await admin.post('/api/admin/day', { day: 9 })).status, 400);
 });
 
 test('fichas de passe: 2 por agente, sem perder pontos; a 3ª é recusada', async () => {
@@ -242,7 +243,7 @@ test('novo agente recebe 3 desafios sem mexer nos outros; remover derruba a sess
   assert.equal(added.status, 200);
   const o = await ov();
   assert.equal(o.participants.length, 10);
-  assert.deepEqual(o.participants.at(-1).missions.map((m) => m.day), [1, 2, 3]);
+  assert.equal(o.participants.at(-1).missions.length, 3);
   assert.deepEqual(o.participants.slice(0, 9).map((p) => p.missions.map((m) => m.missionId).join()), before);
   const fresh = client();
   assert.equal((await fresh.post('/api/login', { name: 'Novo Agente', password: added.body.password })).status, 200);

@@ -1,10 +1,10 @@
-import { h, sheet, closeSheet, sheetIsOpen, toast, busy, statusChip, fmtDate, imageToDataUrl, rankingList, confirmSheet, tier, dayLabel, CATEGORY, MEDAL } from './dom.js';
+import { h, sheet, closeSheet, sheetIsOpen, toast, busy, statusChip, fmtDate, imageToDataUrl, rankingList, confirmSheet, tier, CATEGORY, MEDAL } from './dom.js';
 import { get, post } from './api.js';
 
 const RULES = [
-  ['🎯', 'Como funciona', 'Você tem 3 desafios secretos, um por dia (sexta, sábado e domingo). Cumpra sem o grupo perceber que era um desafio. Segunda é o fechamento.'],
+  ['🎯', 'Como funciona', 'Você tem 3 desafios secretos para cumprir ao longo da viagem, na ordem que quiser. Cumpra sem o grupo perceber que era um desafio. Segunda é o fechamento.'],
   ['✅', 'Como validar', 'Cumpriu? Toque em "Marcar como concluída" e avise só o organizador. Ele confirma com foto ou testemunha e os pontos entram.'],
-  ['⭐', 'Pontos', '1 fácil · 2 médio · 3 difícil · 5 arriscado (os de 5 só aparecem no último dia).'],
+  ['⭐', 'Pontos', '1 fácil · 2 médio · 3 difícil · 5 arriscado.'],
   ['🚨', 'Flagrante', 'Descobriu o desafio de outro? Denuncie na aba Flagrante: se o organizador confirmar, você ganha 1 ponto e o dono perde aquele desafio.'],
   ['🎫', 'Ficha de passe', 'Você tem 2 fichas para recusar um desafio sem perder pontos. Fugir do jogo sem gastar uma ficha custa 1 ponto.'],
   ['🍻', 'Beber com segurança', 'Quem bebe num desafio aceita beber. Nunca coloque bebida em copo alheio sem avisar (alergia, remédio, quem não bebe). Sem garrafa inteira, sem beber até apagar. Sem álcool vale sempre.'],
@@ -83,18 +83,11 @@ export function startPlayer(root, logout) {
   }
 
   function missionCard(m) {
-    const when = dayLabel(st.me.game.startDate, m.day);
-    if (m.locked) {
-      return h('div', { class: 'mission locked' },
-        h('div', { class: 'head' }, h('span', {}, `🔒 Desafio ${String(m.day).padStart(2, '0')} · ${when}`)),
-        h('div', { class: 'title' }, 'Em sigilo'),
-        h('div', { class: 'tap' }, 'LIBERADO PELO COMANDO NO DIA'));
-    }
     const T = tier(m.points);
     return h('button', { class: `mission ${m.points >= 5 ? 'arriscado' : m.points >= 3 ? 'dificil' : ''} ${m.status}`, onclick: () => openMission(m) },
       h('div', { class: 'head' }, h('span', {}, `${T.icon} Desafio ${String(m.day).padStart(2, '0')} — ${m.points} pt${m.points > 1 ? 's' : ''}`), statusChip(m.status)),
       h('div', { class: 'title' }, m.title),
-      h('div', { class: 'foot' }, h('span', { class: 'chip' }, CATEGORY[m.category] || m.category), h('span', { class: 'tap' }, `${when.toUpperCase()} ›`)));
+      h('div', { class: 'foot' }, h('span', { class: 'chip' }, CATEGORY[m.category] || m.category), h('span', { class: 'tap' }, 'ABRIR ARQUIVO ›')));
   }
 
   function openMission(m) {

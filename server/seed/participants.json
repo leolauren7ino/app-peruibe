@@ -1,11 +1,34 @@
 [
-  { "name": "Murillo Moya" },
-  { "name": "Matheus Quinzani", "restrictedRomantic": true },
-  { "name": "Baiano" },
-  { "name": "Vovô Slavic" },
-  { "name": "Bruno Picarelli", "restrictedRomantic": true },
-  { "name": "Henrique Gomiero" },
-  { "name": "Felipe Gomiero" },
-  { "name": "Matheus Italiano", "restrictedRomantic": true },
-  { "name": "Leo Laurentino", "nickname": "Mal Falado" }
+  {
+    "name": "Murillo Moya",
+    "alias": "?"
+  },
+  {
+    "name": "Matheus Quinzani",
+    "restrictedRomantic": true
+  },
+  {
+    "name": "Baiano"
+  },
+  {
+    "name": "Vovô Slavic"
+  },
+  {
+    "name": "Bruno Picarelli",
+    "restrictedRomantic": true
+  },
+  {
+    "name": "Henrique Gomiero"
+  },
+  {
+    "name": "Felipe Gomiero"
+  },
+  {
+    "name": "Matheus Italiano",
+    "restrictedRomantic": true
+  },
+  {
+    "name": "Leo Laurentino",
+    "nickname": "Mal Falado"
+  }
 ]
