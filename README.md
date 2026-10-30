@@ -9,17 +9,24 @@ npm start     # http://localhost:3000
 npm test      # sorteio, autorização e fluxo completo
 ```
 
-Na primeira execução o app cria o banco em `data/`, carrega o catálogo (44 missões), cria a partida com os 9 agentes e já faz o sorteio (Agente Duplo + missões). A **senha do admin** é gerada e salva em `data/ADMIN_PASSWORD.txt` (ou defina `ADMIN_PASSWORD=...`).
+Na primeira execução o app cria o banco em `data/`, carrega os 27 desafios do Peruibiza, cria a partida com os 9 agentes e já faz o sorteio. A **senha do admin** é gerada e salva em `data/ADMIN_PASSWORD.txt` (ou defina `ADMIN_PASSWORD=...`).
 
-Login do admin: nome `admin` + senha. Lá você vê as senhas de cada agente (botão WhatsApp monta a mensagem), o Agente Duplo e clica **Iniciar operação**, que trava o sorteio.
+Banco da versão anterior? Ao subir, ele é migrado sozinho (agentes e senhas preservados). Se a partida ainda estava em preparação, os desafios são sorteados de novo com as regras novas; se já tinha começado, crie uma **Nova partida** no painel mantendo agentes e senhas.
 
-Para os celulares acessarem, o app precisa de URL pública com HTTPS (Render/Railway/Fly com disco persistente em `/data`, via Dockerfile; ou Cloudflare Tunnel a partir do seu PC).
+## Como o jogo funciona no app
+- Cada agente tem 3 desafios, **um por dia** (sexta, sábado, domingo). O admin libera um dia por vez (**Operação → Liberar dia N**); dias trancados não enviam nenhum conteúdo ao celular.
+- Pontos por desafio: 1 fácil, 2 médio, 3 difícil, 5 arriscado (5 só no último dia). Editáveis por desafio na aba Missões.
+- Agente marca como concluído → fila do organizador → confirma (foto ou testemunha) → pontos.
+- **Fichas de passe**: 2 por agente (recusa sem perder pontos). **Flagrante**: o agente denuncia, o admin julga: acusador +1 e o dono perde aquela carta. **Fuga**: admin aplica -1 em "± Ajustar pontos".
+- **Encerrar e revelar** (segunda): todos os desafios ficam visíveis e o ranking final mostra o campeão e quem paga a rodada.
+- **Agente Duplo** é opcional (desligado por padrão): ele lê todos os desafios, o que combina mal com o Flagrante.
+- O sorteio garante: ninguém recebe desafio com o próprio nome, `[ALVO]` nunca é o dono, quem tem restrição não recebe desafio de flerte, e a soma de pontos fica equilibrada. O catálogo padrão tem exatamente 27 desafios (9 x 3): para trocar desafios ou entrar mais gente, cadastre extras.
 
 ## Variáveis
 `PORT`, `DATA_DIR`, `ADMIN_PASSWORD`, `APP_SECRET` (cifra as senhas visíveis ao admin; se omitida, gera `data/secret.key`), `TRUST_PROXY=1` (atrás de proxy HTTPS).
 
 ## Arquitetura
-- `server/draw.js` — sorteio puro: 1 difícil + 2 médias, sem missão repetida, ninguém é alvo de si, restritos sem flerte, equilibra esforço e alvos.
+- `server/draw.js` — sorteio puro (busca com troca de cartas): 1 desafio por dia, regras duras garantidas, pontuação e alvos equilibrados.
 - `server/game.js` — regras da partida (sorteio travado após iniciar, ranking, troca, entrada/saída de agente).
 - `server/routes/` — `auth`, `player` (só o próprio pacote; Central do Duplo checada no servidor), `admin`.
 - `server/seed/*.json` — missões e participantes iniciais. `public/` — frontend em JS puro.
@@ -29,4 +36,4 @@ Para os celulares acessarem, o app precisa de URL pública com HTTPS (Render/Rai
 - Senhas: hash scrypt + cópia AES-256-GCM só para o admin exibir. Cookie HttpOnly/SameSite=Strict, bloqueio após 10 erros/10 min, checagem de Origin, fotos validadas por tipo real.
 
 ## Novas missões/agentes (sem rebuild)
-Painel admin → **Missões** (criar/editar/importar JSON) e **Agentes**. `{alvo}` na descrição vira o nome do alvo; `target` pode ser vazio, `*` (sorteado) ou nome de um agente. "Flerte" marca missões que não vão para quem tem restrição.
+Painel admin → **Missões** (criar/editar/importar JSON) e **Agentes**. `[ALVO]` na descrição vira o nome do alvo; `target` pode ser vazio, `*` (sorteado) ou nome de um agente. "Flerte" marca missões que não vão para quem tem restrição.

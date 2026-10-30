@@ -1,4 +1,4 @@
-import { h, sheet, closeSheet, sheetIsOpen, toast, busy, statusChip, fmtDate, rankingList, confirmSheet, LEVEL, CATEGORY } from './dom.js';
+import { h, sheet, closeSheet, sheetIsOpen, toast, busy, statusChip, fmtDate, rankingList, confirmSheet, tier, dayLabel, CATEGORY } from './dom.js';
 import { get, post, patch, del } from './api.js';
 
 const STATUS_LABEL = { setup: 'PREPARAÇÃO', active: 'EM ANDAMENTO', finished: 'ENCERRADA' };
@@ -6,7 +6,8 @@ const EVENT_LABEL = {
   sorteio_duplo: '🎲 Sorteou o Agente Duplo', sorteio_missoes: '🎲 Sorteou as missões', inicio: '▶ Operação iniciada',
   enviada: '📨 Enviou para análise', desfeita: '↩ Desfez o envio', concluida: '✅ Concluiu (automático)', confirmada: '✅ Confirmada',
   devolvida: '↩ Devolvida', resetada: '♻ Resetada', troca: '🔀 Missão trocada', encerrada: '🏁 Partida encerrada',
-  agente_removido: '🗑 Agente removido', missoes_novo_agente: '🎲 Missões do novo agente',
+  agente_removido: '🗑 Agente removido', missoes_novo_agente: '🎲 Missões do novo agente', passe: '🎫 Usou ficha de passe',
+  flagrante_denuncia: '🚨 Denunciou flagrante', flagrante: '🚨 Flagrante aceito', ajuste: '± Ajuste de pontos', dia_liberado: '🔓 Dia liberado',
 };
 
 export function startAdmin(root, logout) {
@@ -57,75 +58,108 @@ export function startAdmin(root, logout) {
     if (!d.game) return noGame();
     const g = d.game;
     const ask = (msg, fn, ok, danger) => async (e) => { if (await confirmSheet(msg, { ok: 'Sim', danger })) act(e.target, fn, ok); };
+    const when = (n) => dayLabel(g.startDate, n);
 
     const controls = [];
     if (g.status === 'setup') {
       controls.push(
         h('div', { class: 'row' },
-          h('button', { class: 'btn', onclick: (e) => act(e.target, () => post('/api/admin/draw/double'), 'Agente Duplo sorteado') }, '🎲 Sortear duplo'),
-          h('button', { class: 'btn', onclick: (e) => act(e.target, () => post('/api/admin/draw/missions'), 'Missões sorteadas') }, '🎲 Sortear missões')),
-        h('button', { class: 'btn', onclick: (e) => act(e.target, () => post('/api/admin/draw/all'), 'Sorteio completo feito') }, '🎲 Refazer sorteio completo'),
-        h('button', { class: 'btn primary', onclick: ask('Iniciar a operação? Isso TRAVA o sorteio: o Agente Duplo e as missões não mudam mais, e os agentes passam a ver seus pacotes.', () => post('/api/admin/start'), 'Operação iniciada!') }, '▶ Iniciar operação'));
+          g.doubleEnabled && h('button', { class: 'btn', onclick: (e) => act(e.target, () => post('/api/admin/draw/double'), 'Agente Duplo sorteado') }, '🎲 Sortear duplo'),
+          h('button', { class: 'btn', onclick: (e) => act(e.target, () => post('/api/admin/draw/missions'), 'Desafios sorteados') }, '🎲 Sortear desafios')),
+        h('button', { class: 'btn primary', onclick: ask('Iniciar a operação? Isso TRAVA o sorteio e libera o desafio do dia 1 para todos.', () => post('/api/admin/start'), 'Operação iniciada!') }, '▶ Iniciar operação'));
     } else if (g.status === 'active') {
-      controls.push(h('button', { class: 'btn danger', onclick: ask('Encerrar a partida? Os agentes não poderão mais enviar missões.', () => post('/api/admin/finish'), 'Partida encerrada', true) }, '🏁 Encerrar partida'));
+      const next = g.unlockedDay + 1;
+      controls.push(
+        h('div', { class: 'card' }, h('div', { class: 'muted mono', style: 'font-size:12px' }, 'DESAFIOS LIBERADOS'),
+          h('b', {}, `Dia ${g.unlockedDay} de 3 · ${when(g.unlockedDay)}`),
+          next <= 3 && h('button', { class: 'btn primary', onclick: ask(`Liberar os desafios do dia ${next} (${when(next)}) para todos os agentes?`, () => post('/api/admin/day', { day: next }), `Dia ${next} liberado`) }, `🔓 Liberar dia ${next} · ${when(next)}`)),
+        h('button', { class: 'btn danger', onclick: ask('Encerrar a partida? Os desafios de todo mundo são revelados e ninguém mais envia nada.', () => post('/api/admin/finish'), 'Partida encerrada', true) }, '🏁 Encerrar e revelar'));
     } else controls.push(newGameButton());
 
-    const medio = h('input', { type: 'number', min: 0, value: g.pointsMedio, inputmode: 'numeric' });
-    const dif = h('input', { type: 'number', min: 0, value: g.pointsDificil, inputmode: 'numeric' });
+    const start = h('input', { type: 'date', value: g.startDate || '' });
     const auto = h('input', { type: 'checkbox', checked: g.autoConfirm });
-    const save = h('button', { class: 'btn', onclick: () => act(save, () => patch('/api/admin/game', { pointsMedio: medio.value, pointsDificil: dif.value, autoConfirm: auto.checked }), 'Configurações salvas') }, 'Salvar configurações');
+    const dbl = h('input', { type: 'checkbox', checked: g.doubleEnabled, disabled: g.status !== 'setup' });
+    const save = h('button', { class: 'btn', onclick: () => act(save, () => patch('/api/admin/game', { startDate: start.value, autoConfirm: auto.checked, doubleEnabled: dbl.checked }), 'Configurações salvas') }, 'Salvar configurações');
 
     return h('div', {},
       h('div', { class: 'row between', style: 'margin-top:16px' }, h('h1', { style: 'font-size:20px' }, g.name), h('span', { class: 'chip red' }, STATUS_LABEL[g.status])),
-      h('div', { class: 'card red double-banner', style: 'margin-top:12px' }, h('small', {}, '🕵️‍♂️ AGENTE DUPLO · SÓ VOCÊ VÊ'),
+      g.doubleEnabled && h('div', { class: 'card red double-banner', style: 'margin-top:12px' }, h('small', {}, '🕵️‍♂️ AGENTE DUPLO · SÓ VOCÊ VÊ'),
         h('b', {}, d.doubleAgent ? d.doubleAgent.name : '— ainda não sorteado —')),
-      ...controls,
+      h('div', { style: 'margin-top:12px' }), ...controls,
+      d.flagrantes.length > 0 && h('h2', {}, `🚨 Flagrantes (${d.flagrantes.length})`),
+      d.flagrantes.map(flagranteCard),
       d.pending.length > 0 && h('h2', {}, `🔎 Em análise (${d.pending.length})`),
       d.pending.map(pendingCard),
-      h('h2', {}, 'Pacotes e missões'),
+      h('h2', {}, 'Agentes e desafios'),
       d.participants.map(participantCard),
       h('h2', {}, 'Configurações'),
       h('div', { class: 'card' },
-        h('label', {}, 'Pontos — missão média'), medio, h('label', {}, 'Pontos — missão difícil'), dif,
-        h('label', { class: 'check' }, auto, 'Aprovar automaticamente (sem fila de análise)'), save,
-        h('p', { class: 'muted', style: 'font-size:13px' }, 'Missões já confirmadas mantêm os pontos de quando foram confirmadas.')),
+        h('label', {}, 'Data da sexta (dia 1)'), start,
+        h('label', { class: 'check' }, auto, 'Aprovar automaticamente (sem fila de análise)'),
+        h('label', { class: 'check' }, dbl, 'Usar Agente Duplo (lê todos os desafios; desligado por padrão)'), save,
+        h('p', { class: 'muted', style: 'font-size:13px' }, 'A pontuação é de cada desafio (1, 2, 3 ou 5) e se edita na aba Missões. O Agente Duplo só liga/desliga antes de iniciar.')),
       g.status !== 'finished' && h('div', {}, newGameButton('＋ Nova partida (encerra a atual)')));
+  }
+
+  function flagranteCard(f) {
+    return h('div', { class: 'card red' },
+      h('div', {}, h('b', {}, f.accuserName), ' acusa ', h('b', {}, f.accusedName)),
+      h('div', { class: 'mini' }, h('div', { class: 'd' }, `💬 ${f.guess}`)),
+      h('div', { class: 'muted mono', style: 'font-size:12px' }, 'DESAFIOS EM ABERTO DO ACUSADO — TOQUE NO QUE FOI DESCOBERTO:'),
+      f.candidates.length === 0 && h('div', { class: 'muted' }, 'Nenhum desafio em aberto.'),
+      f.candidates.map((m) => h('div', { class: 'mini' }, h('div', { class: 't' }, `${tier(m.points).icon} Dia ${m.day} · ${m.title}`), h('div', { class: 'd' }, m.description),
+        h('button', { class: 'btn small primary', onclick: async (e) => {
+          if (await confirmSheet(`Aceitar o flagrante? ${f.accusedName} perde "${m.title}" e ${f.accuserName} ganha 1 ponto.`, { ok: 'Aceitar' })) {
+            act(e.target, () => post(`/api/admin/flagrantes/${f.id}/accept`, { assignmentId: m.id }), 'Flagrante aceito');
+          }
+        } }, '🚨 Foi esse'))),
+      h('button', { class: 'btn', onclick: (e) => act(e.target, () => post(`/api/admin/flagrantes/${f.id}/reject`), 'Flagrante recusado') }, '✖ Recusar flagrante'));
   }
 
   function pendingCard(m) {
     return h('div', { class: 'card' },
-      h('div', { class: 'row between' }, h('b', {}, m.participantName), h('span', { class: 'chip' }, `${m.points} pts`)),
-      h('div', { class: 'mini' }, h('div', { class: 't' }, `${LEVEL[m.level].icon} ${m.title}`), h('div', { class: 'd' }, m.description),
-        m.note && h('div', {}, `💬 ${m.note}`), h('div', { class: 'muted mono', style: 'font-size:11px' }, `Enviada ${fmtDate(m.submittedAt)}`)),
+      h('div', { class: 'row between' }, h('b', {}, m.participantName), h('span', { class: 'chip' }, `${m.points} pt${m.points > 1 ? 's' : ''}`)),
+      h('div', { class: 'mini' }, h('div', { class: 't' }, `${tier(m.points).icon} Dia ${m.day} · ${m.title}`), h('div', { class: 'd' }, m.description),
+        m.note && h('div', {}, `💬 ${m.note}`), h('div', { class: 'muted mono', style: 'font-size:11px' }, `Enviado ${fmtDate(m.submittedAt)}`)),
       m.hasEvidence && h('img', { class: 'ev-thumb', src: `/api/admin/assignments/${m.id}/evidence`, alt: 'evidência', loading: 'lazy',
         onclick: () => sheet(m.title, h('img', { class: 'ev', src: `/api/admin/assignments/${m.id}/evidence`, alt: 'evidência' }), h('button', { class: 'btn', onclick: closeSheet }, 'Fechar')) }),
       h('div', { class: 'row' },
-        h('button', { class: 'btn primary', onclick: (e) => act(e.target, () => post(`/api/admin/assignments/${m.id}/confirm`), 'Confirmada') }, '✔ Confirmar'),
+        h('button', { class: 'btn primary', onclick: (e) => act(e.target, () => post(`/api/admin/assignments/${m.id}/confirm`), 'Confirmado') }, '✔ Confirmar'),
         h('button', { class: 'btn', onclick: () => {
           const msg = h('input', { type: 'text', placeholder: 'Motivo (opcional)', maxlength: 200 });
-          const go = h('button', { class: 'btn danger', onclick: () => act(go, async () => { await post(`/api/admin/assignments/${m.id}/reject`, { message: msg.value }); closeSheet(); }, 'Devolvida') }, '↩ Devolver ao agente');
-          sheet('Devolver missão', h('label', {}, 'Mensagem para o agente'), msg, go);
+          const go = h('button', { class: 'btn danger', onclick: () => act(go, async () => { await post(`/api/admin/assignments/${m.id}/reject`, { message: msg.value }); closeSheet(); }, 'Devolvido') }, '↩ Devolver ao agente');
+          sheet('Devolver desafio', h('label', {}, 'Mensagem para o agente'), msg, go);
         } }, '↩ Devolver')));
   }
 
   function participantCard(p) {
     const key = `p${p.id}`;
-    const box = h('div', { class: st.open.has(key) ? '' : 'hidden' }, p.missions.map((m) => missionRow(m, p)));
+    const box = h('div', { class: st.open.has(key) ? '' : 'hidden' }, p.missions.map((m) => missionRow(m, p)),
+      h('button', { class: 'btn small', style: 'margin-top:10px', onclick: () => adjustPoints(p) }, '± Ajustar pontos'));
+    const s = p.stats;
     return h('div', { class: 'card' },
       h('div', { class: 'acc-head', onclick: () => { box.classList.toggle('hidden'); st.open.has(key) ? st.open.delete(key) : st.open.add(key); } },
-        h('div', {}, h('b', {}, p.isDouble ? '🕵️‍♂️ ' : '', p.name), h('div', { class: 'muted mono', style: 'font-size:12px' }, `${p.stats.points} pts · ${p.stats.done}/${p.stats.total} concluídas`)),
+        h('div', {}, h('b', {}, p.isDouble ? '🕵️‍♂️ ' : '', p.name), h('div', { class: 'muted mono', style: 'font-size:12px' }, `${s.points} pts · ${s.done}/${s.total} · passes ${s.passesUsed}/2${s.adjustments ? ` · ajuste ${s.adjustments > 0 ? '+' : ''}${s.adjustments}` : ''}`)),
         h('span', { class: 'chip' }, 'VER')),
       box);
   }
 
+  function adjustPoints(p) {
+    const pts = h('input', { type: 'number', value: -1, inputmode: 'numeric' });
+    const reason = h('input', { type: 'text', placeholder: 'Ex.: fugiu sem ficha de passe', maxlength: 120, value: 'Fugiu sem ficha de passe' });
+    const go = h('button', { class: 'btn primary', onclick: () => act(go, async () => { await post(`/api/admin/participants/${p.id}/adjust`, { points: Number(pts.value), reason: reason.value }); closeSheet(); }, 'Pontos ajustados') }, 'Aplicar');
+    sheet(`Ajustar pontos de ${p.name}`, h('label', {}, 'Pontos (negativo tira)'), pts, h('label', {}, 'Motivo'), reason, go);
+  }
+
   function missionRow(m, p) {
+    const closed = ['flagrante', 'passe'].includes(m.status);
     return h('div', { class: 'mini' },
-      h('div', { class: 'row between' }, h('span', { class: 't' }, `${LEVEL[m.level].icon} ${m.title}`), statusChip(m.status)),
+      h('div', { class: 'row between' }, h('span', { class: 't' }, `${tier(m.points).icon} Dia ${m.day} · ${m.title}`), statusChip(m.status)),
       h('div', { class: 'd' }, m.description),
       h('div', { class: 'row' },
-        m.status !== 'concluida' && h('button', { class: 'btn small primary', onclick: (e) => act(e.target, () => post(`/api/admin/assignments/${m.id}/confirm`), 'Confirmada') }, '✔ Confirmar'),
-        m.status !== 'pendente' && h('button', { class: 'btn small', onclick: async (e) => { if (await confirmSheet(`Resetar "${m.title}" de ${p.name}? Apaga evidência e pontos.`, { ok: 'Resetar', danger: true })) act(e.target, () => post(`/api/admin/assignments/${m.id}/reset`), 'Missão resetada'); } }, '♻ Resetar'),
-        m.status !== 'concluida' && h('button', { class: 'btn small', onclick: async (e) => { if (await confirmSheet(`Trocar a missão "${m.title}" por outra sorteada do catálogo?`, { ok: 'Trocar' })) act(e.target, () => post(`/api/admin/assignments/${m.id}/swap`), 'Missão trocada'); } }, '🔀 Trocar')));
+        !closed && m.status !== 'concluida' && h('button', { class: 'btn small primary', onclick: (e) => act(e.target, () => post(`/api/admin/assignments/${m.id}/confirm`), 'Confirmado') }, '✔ Confirmar'),
+        m.status !== 'pendente' && h('button', { class: 'btn small', onclick: async (e) => { if (await confirmSheet(`Resetar "${m.title}" de ${p.name}? Apaga evidência e pontos.`, { ok: 'Resetar', danger: true })) act(e.target, () => post(`/api/admin/assignments/${m.id}/reset`), 'Desafio resetado'); } }, '♻ Resetar'),
+        m.status !== 'concluida' && h('button', { class: 'btn small', onclick: async (e) => { if (await confirmSheet(`Trocar "${m.title}" por outro desafio do catálogo, de pontuação parecida?`, { ok: 'Trocar' })) act(e.target, () => post(`/api/admin/assignments/${m.id}/swap`), 'Desafio trocado'); } }, '🔀 Trocar')));
   }
 
   // ---- Agentes -----------------------------------------------------------------------------------------
@@ -187,15 +221,15 @@ export function startAdmin(root, logout) {
   // ---- Missões (catálogo) --------------------------------------------------------------------------------------
   function missionsView() {
     if (!st.catalog) return h('div', { class: 'empty' }, 'CARREGANDO…');
-    const FILTERS = [['todas', 'Todas'], ['medio', '🟡 Médias'], ['dificil', '🔴 Difíceis'], ['inativas', 'Inativas']];
-    const list = st.catalog.missions.filter((m) => st.filter === 'todas' ? m.active : st.filter === 'inativas' ? !m.active : m.active && m.level === st.filter);
+    const FILTERS = [['todas', 'Todas'], ['1', '🟢 1 pt'], ['2', '🟡 2 pts'], ['3', '🔴 3 pts'], ['5', '☠️ 5 pts'], ['inativas', 'Inativas']];
+    const list = st.catalog.missions.filter((m) => st.filter === 'todas' ? m.active : st.filter === 'inativas' ? !m.active : m.active && String(m.points) === st.filter);
     return h('div', {},
-      h('button', { class: 'btn primary', onclick: () => editMission(null) }, '＋ Nova missão'),
+      h('button', { class: 'btn primary', onclick: () => editMission(null) }, '＋ Novo desafio'),
       h('button', { class: 'btn', onclick: importMissions }, '⬆ Importar lista (JSON)'),
       h('div', { class: 'filters', style: 'margin-top:14px' }, FILTERS.map(([id, label]) => h('button', { class: `btn small ${st.filter === id ? 'on' : ''}`, onclick: () => { st.filter = id; render(); } }, label))),
-      h('p', { class: 'muted mono', style: 'font-size:11px' }, `${list.length} MISSÕES · {alvo} NA DESCRIÇÃO VIRA O NOME DO ALVO SORTEADO`),
+      h('p', { class: 'muted mono', style: 'font-size:11px' }, `${list.length} DESAFIOS · [ALVO] NA DESCRIÇÃO VIRA O NOME DO ALVO SORTEADO`),
       list.map((m) => h('div', { class: 'card' },
-        h('div', { class: 'row between' }, h('b', {}, `${LEVEL[m.level].icon} ${m.title}`), h('span', { class: 'chip' }, m.points ?? 'pts padrão')),
+        h('div', { class: 'row between' }, h('b', {}, `${tier(m.points).icon} ${m.title}`), h('span', { class: 'chip' }, `${m.points} pt${m.points > 1 ? 's' : ''}`)),
         h('div', { class: 'muted', style: 'font-size:14px;margin:6px 0' }, m.description),
         h('div', { class: 'row' }, h('span', { class: 'chip' }, CATEGORY[m.category] || m.category), m.target && h('span', { class: 'chip' }, m.target === '*' ? 'alvo sorteado' : `alvo: ${m.target}`),
           m.romantic && h('span', { class: 'chip red' }, 'flerte'), m.usedBy && h('span', { class: 'chip analise' }, `com ${m.usedBy}`)),
@@ -206,42 +240,36 @@ export function startAdmin(root, logout) {
     const f = {
       title: h('input', { type: 'text', value: m?.title || '', maxlength: 80 }),
       description: h('textarea', { maxlength: 800 }, m?.description || ''),
-      level: h('select', { value: m?.level || 'medio' }, h('option', { value: 'medio' }, '🟡 Média'), h('option', { value: 'dificil' }, '🔴 Difícil')),
+      points: h('select', { value: String(m?.points ?? 2) }, ['1', '2', '3', '5'].map((n) => h('option', { value: n }, `${tier(Number(n)).icon} ${n} ponto${n === '1' ? '' : 's'} · ${tier(Number(n)).label}`))),
       category: h('select', { value: m?.category || 'social' }, st.catalog.categories.map((c) => h('option', { value: c }, CATEGORY[c] || c))),
       target: h('input', { type: 'text', value: m?.target || '', placeholder: 'vazio = sem alvo · * = sorteado · ou um nome' }),
-      effort: h('select', { value: String(m?.effort || 2) }, h('option', { value: '1' }, '1 · leve'), h('option', { value: '2' }, '2 · médio'), h('option', { value: '3' }, '3 · puxado')),
-      points: h('input', { type: 'number', value: m?.points ?? '', placeholder: 'vazio = padrão do nível', inputmode: 'numeric' }),
       romantic: h('input', { type: 'checkbox', checked: m?.romantic }),
       active: h('input', { type: 'checkbox', checked: m ? m.active : true }),
     };
-    const body = () => ({
-      title: f.title.value, description: f.description.value, level: f.level.value, category: f.category.value, target: f.target.value,
-      effort: f.effort.value, points: f.points.value === '' ? null : f.points.value, romantic: f.romantic.checked, active: f.active.checked,
-    });
+    const body = () => ({ title: f.title.value, description: f.description.value, points: Number(f.points.value), category: f.category.value, target: f.target.value, romantic: f.romantic.checked, active: f.active.checked });
     const save = h('button', { class: 'btn primary', onclick: () => act(save, async () => {
       m ? await patch(`/api/admin/missions/${m.id}`, body()) : await post('/api/admin/missions', body());
       closeSheet(); st.catalog = await get('/api/admin/missions');
-    }, 'Missão salva') }, 'Salvar');
+    }, 'Desafio salvo') }, 'Salvar');
     const remove = m && h('button', { class: 'btn danger', onclick: () => act(remove, async () => {
       const r = await del(`/api/admin/missions/${m.id}`); closeSheet(); st.catalog = await get('/api/admin/missions');
-      toast(r.deactivated ? 'Já usada: desativada' : 'Missão apagada', 'ok');
+      toast(r.deactivated ? 'Já usado: desativado' : 'Desafio apagado', 'ok');
     }) }, '🗑 Apagar / desativar');
-    sheet(m ? 'Editar missão' : 'Nova missão', h('label', {}, 'Nome'), f.title, h('label', {}, 'Descrição'), f.description,
-      h('label', {}, 'Nível'), f.level, h('label', {}, 'Categoria'), f.category, h('label', {}, 'Alvo'), f.target,
-      h('label', {}, 'Esforço (equilibra o sorteio)'), f.effort, h('label', {}, 'Pontos específicos'), f.points,
+    sheet(m ? 'Editar desafio' : 'Novo desafio', h('label', {}, 'Nome'), f.title, h('label', {}, 'Descrição (use [ALVO])'), f.description,
+      h('label', {}, 'Pontuação'), f.points, h('label', {}, 'Categoria'), f.category, h('label', {}, 'Alvo'), f.target,
       h('label', { class: 'check' }, f.romantic, 'Envolve flerte (não vai para quem tem restrição)'),
-      h('label', { class: 'check' }, f.active, 'Ativa no sorteio'), save, remove);
+      h('label', { class: 'check' }, f.active, 'Ativo no sorteio'), save, remove);
   }
 
   function importMissions() {
-    const ta = h('textarea', { style: 'min-height:200px;font-family:var(--mono);font-size:13px', placeholder: '[{"title":"...","description":"... {alvo} ...","level":"medio","category":"social","target":"*","effort":2}]' });
+    const ta = h('textarea', { style: 'min-height:200px;font-family:var(--mono);font-size:13px', placeholder: '[{"title":"...","description":"... [ALVO] ...","points":2,"category":"social","target":"*"}]' });
     const go = h('button', { class: 'btn primary', onclick: () => act(go, async () => {
       let missions;
       try { missions = JSON.parse(ta.value); } catch { throw new Error('JSON inválido.'); }
       const r = await post('/api/admin/missions/import', { missions });
       closeSheet(); st.catalog = await get('/api/admin/missions'); toast(`${r.count} missões importadas`, 'ok');
     }) }, 'Importar');
-    sheet('Importar missões', h('p', { class: 'muted' }, 'Cole uma lista JSON. Campos: title, description, level (medio|dificil), category, target, romantic, effort, points.'), ta, go);
+    sheet('Importar missões', h('p', { class: 'muted' }, 'Cole uma lista JSON. Campos: title, description, points (1, 2, 3, 5), category, target, romantic.'), ta, go);
   }
 
   // ---- Ranking / Log ---------------------------------------------------------------------------------------------

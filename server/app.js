@@ -5,7 +5,7 @@ import { loadConfig, ROOT } from './config.js';
 import { openDb, tx, now } from './db.js';
 import { loadSecretKey, LoginLimiter, readSession, hashPassword, verifyPassword, generatePassword } from './security.js';
 import { createRouter, HANDLED, HttpError, parseCookies, readJson, sendJson, serveStatic } from './http.js';
-import { addParticipant, currentGame, drawDouble, drawAllMissions } from './game.js';
+import { addParticipant, currentGame, drawAllMissions } from './game.js';
 import { authRoutes } from './routes/auth.js';
 import { playerRoutes } from './routes/player.js';
 import { adminRoutes } from './routes/admin.js';
@@ -51,22 +51,43 @@ async function setupAdmin(app) {
   }
 }
 
-/** Primeira execução: catálogo de missões + partida com os 9 agentes, já sorteada (ainda não iniciada). */
+const CATALOG_VERSION = 2; // 2 = desafios do Peruibiza (pontos 1/2/3/5, um por dia)
+
+function ensureCatalog(app) {
+  const { db } = app;
+  const row = db.prepare("SELECT value FROM settings WHERE key = 'catalog_version'").get();
+  if (Number(row?.value) >= CATALOG_VERSION) return false;
+  const seed = JSON.parse(fs.readFileSync(path.join(ROOT, 'server/seed/missions.json'), 'utf8'));
+  const ins = db.prepare(`INSERT INTO missions (title, description, points, category, target, romantic, created_at) VALUES (?,?,?,?,?,?,?)`);
+  tx(db, () => {
+    db.prepare('UPDATE missions SET active = 0').run(); // o catálogo da 1ª versão fica no histórico, mas fora do sorteio
+    seed.forEach((m) => ins.run(m.title, m.description, m.points, m.category, m.target ?? null, m.romantic ? 1 : 0, now()));
+    db.prepare("INSERT INTO settings (key, value) VALUES ('catalog_version', ?) ON CONFLICT(key) DO UPDATE SET value = excluded.value").run(String(CATALOG_VERSION));
+  });
+  return true;
+}
+
+/** Primeira execução: partida com os 9 agentes, já sorteada (ainda não iniciada). Bancos antigos são atualizados. */
 async function seedIfEmpty(app) {
   const { db, cfg, key } = app;
-  if (db.prepare('SELECT COUNT(*) AS n FROM missions').get().n === 0) {
-    const seed = JSON.parse(fs.readFileSync(path.join(ROOT, 'server/seed/missions.json'), 'utf8'));
-    const ins = db.prepare(`INSERT INTO missions (title, description, level, category, target, romantic, effort, created_at)
-                            VALUES (?,?,?,?,?,?,?,?)`);
-    tx(db, () => seed.forEach((m) => ins.run(m.title, m.description, m.level, m.category, m.target ?? null, m.romantic ? 1 : 0, m.effort ?? 2, now())));
+  const changed = ensureCatalog(app);
+  const existing = currentGame(db);
+  if (existing) {
+    if (!changed) return;
+    if (existing.status === 'setup') {
+      db.prepare('DELETE FROM assignments WHERE game_id = ?').run(existing.id);
+      drawAllMissions(db, cfg.dataDir, existing);
+      app.notes.push(`Catálogo atualizado e missões de "${existing.name}" sorteadas de novo com as regras novas.`);
+    } else {
+      app.notes.push(`Catálogo atualizado. A partida "${existing.name}" já tinha começado com as regras antigas: crie uma NOVA PARTIDA no painel (mantendo agentes e senhas).`);
+    }
+    return;
   }
-  if (currentGame(db)) return;
-  const r = db.prepare('INSERT INTO games (name, created_at) VALUES (?, ?)').run('Operação Peruíbe', now());
+  const r = db.prepare('INSERT INTO games (name, start_date, created_at) VALUES (?, ?, ?)').run('Peruibiza 4ª Edição', '2026-10-30', now());
   const game = db.prepare('SELECT * FROM games WHERE id = ?').get(r.lastInsertRowid);
   const people = JSON.parse(fs.readFileSync(path.join(ROOT, 'server/seed/participants.json'), 'utf8'));
   for (const p of people) await addParticipant(db, key, game, p);
-  drawDouble(db, game);
-  drawAllMissions(db, cfg.dataDir, db.prepare('SELECT * FROM games WHERE id = ?').get(game.id));
+  drawAllMissions(db, cfg.dataDir, game);
   app.notes.push(`Partida "${game.name}" criada com ${people.length} agentes e já sorteada. Entre como admin para ver as senhas e iniciar a operação.`);
 }
 

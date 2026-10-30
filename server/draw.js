@@ -1,20 +1,24 @@
 import crypto from 'node:crypto';
 
 /**
- * Sorteio de missões — função pura (sem banco), para ser fácil de testar e ajustar.
+ * Sorteio de desafios — função pura (sem banco), fácil de testar e ajustar.
  *
- * Regras duras: 1 difícil + 2 médias por agente; nenhuma missão repetida na partida;
- * ninguém é alvo da própria missão; agentes com `restricted` nunca recebem missões `romantic`.
- * Regras suaves (pontuadas e otimizadas em várias tentativas): esforço total parecido entre
- * agentes, alvos distribuídos por igual, sem repetir alvo/categoria para o mesmo agente.
+ * Cada agente recebe 3 desafios, um por dia (position = 1, 2, 3).
+ * Regras duras (violação = sorteio inválido):
+ *   - nenhum desafio repetido na partida;
+ *   - ninguém recebe desafio que leve o próprio nome (alvo fixo = dono);
+ *   - agentes com `restricted` não recebem desafios `romantic`;
+ *   - desafios de 5+ pontos só no último dia.
+ * Regras suaves (otimizadas): pontuação total parecida entre agentes, alvos fixos distribuídos
+ * por igual, sem repetir o mesmo alvo ou categoria para o mesmo agente.
+ * Alvos sorteados ([ALVO], target '*') são escolhidos no fim, nunca o dono.
  */
 export class DrawError extends Error {}
 
-export const SLOTS = [
-  { level: 'medio', position: 1 },
-  { level: 'dificil', position: 2 },
-  { level: 'medio', position: 3 },
-];
+export const DAYS = [1, 2, 3];
+export const LAST_DAY = 3;
+export const RISKY_POINTS = 5;
+export const dayAllowed = (m, day) => (m.points >= RISKY_POINTS ? day === LAST_DAY : true);
 
 export const secureRng = () => crypto.randomInt(0, 2 ** 32) / 2 ** 32;
 
@@ -44,67 +48,111 @@ export function pickTarget(mission, agent, everyone, load, avoid = new Set(), rn
 }
 
 /**
- * @param fill      agentes que precisam de missões: [{ id, restricted }]
- * @param everyone  todos os agentes da partida (possíveis alvos): [{ id }]
- * @param missions  catálogo ativo: [{ id, level, category, romantic, effort, target }]
- *                  onde target é null | '*' | id do participante (já resolvido)
- * @param used      ids de missões já em uso na partida
+ * @param fill        agentes que precisam de desafios: [{ id, restricted }]
+ * @param everyone    todos os agentes da partida (possíveis alvos): [{ id }]
+ * @param missions    catálogo ativo: [{ id, points, category, romantic, target }]
+ *                    onde target é null | '*' | id do participante (já resolvido)
+ * @param used        ids de missões já em uso na partida
  * @param targetLoad  quantas vezes cada participante já é alvo { [id]: n }
+ * @param baseTotals  pontos já planejados dos agentes que NÃO estão em `fill` { [id]: n }
  */
-export function drawMissions({ fill, everyone, missions, used = new Set(), targetLoad = {}, rng = secureRng, tries = 400 }) {
-  const avail = missions.filter((m) => !used.has(m.id));
-  for (const { level } of [SLOTS[0], SLOTS[1]]) {
-    const need = fill.length * (level === 'medio' ? 2 : 1);
-    const have = avail.filter((m) => m.level === level).length;
-    if (have < need) {
-      throw new DrawError(`Catálogo insuficiente: faltam ${need - have} missão(ões) ${level === 'medio' ? 'médias' : 'difíceis'} ativas.`);
-    }
+export function drawMissions({ fill, everyone, missions, used = new Set(), targetLoad = {}, baseTotals = {}, rng = secureRng, restarts = 8, iterations = 5000 }) {
+  const pool = missions.filter((m) => !used.has(m.id));
+  const slots = fill.flatMap((p) => DAYS.map((day) => ({ p, day })));
+  if (pool.length < slots.length) {
+    throw new DrawError(`Catálogo insuficiente: faltam ${slots.length - pool.length} desafio(s) ativos (precisa de ${slots.length}, há ${pool.length}).`);
   }
+  const lastSlots = slots.filter((s) => s.day === LAST_DAY).length;
+  if (pool.filter((m) => m.points >= RISKY_POINTS).length > 0 && lastSlots === 0) { /* sem último dia: arriscados simplesmente não entram */ }
+
+  const fixedLoad = (assign) => {
+    const load = { ...targetLoad };
+    for (const mi of assign) { const t = pool[mi].target; if (typeof t === 'number') load[t] = (load[t] || 0) + 1; }
+    return load;
+  };
+
+  const evaluate = (assign) => {
+    let violations = 0;
+    const totals = new Map(fill.map((p) => [p.id, baseTotals[p.id] || 0]));
+    const seenTargets = new Map();
+    const seenCats = new Map();
+    let dups = 0;
+    assign.forEach((mi, si) => {
+      const { p, day } = slots[si];
+      const m = pool[mi];
+      if (!dayAllowed(m, day)) violations++;
+      if (p.restricted && m.romantic) violations++;
+      if (m.target === p.id) violations++;
+      totals.set(p.id, totals.get(p.id) + m.points);
+      if (typeof m.target === 'number') {
+        const k = `${p.id}:${m.target}`;
+        if (seenTargets.has(k)) dups += 3;
+        seenTargets.set(k, 1);
+      }
+      const ck = `${p.id}:${m.category}`;
+      if (seenCats.has(ck)) dups += 0.5;
+      seenCats.set(ck, 1);
+    });
+    const others = Object.entries(baseTotals).filter(([id]) => !fill.some((p) => p.id === Number(id))).map(([, v]) => v);
+    const load = fixedLoad(assign);
+    const score = variance([...totals.values(), ...others]) * 4 + variance(everyone.map((p) => load[p.id] || 0)) + dups;
+    return { violations, score, cost: violations * 1000 + score };
+  };
 
   let best = null;
-  for (let t = 0; t < tries; t++) {
-    const taken = new Set();
-    const load = { ...targetLoad };
-    const picks = [];
-    const effortOf = new Map();
-    let dupCats = 0;
-    let ok = true;
+  for (let r = 0; r < restarts; r++) {
+    // arriscados primeiro nos slots do último dia; o resto embaralhado
+    const order = shuffle(pool.map((_, i) => i), rng);
+    const assign = new Array(slots.length).fill(-1);
+    const free = [];
+    const risky = order.filter((i) => pool[i].points >= RISKY_POINTS);
+    const rest = order.filter((i) => pool[i].points < RISKY_POINTS);
+    const lastIdx = shuffle(slots.map((s, i) => (s.day === LAST_DAY ? i : -1)).filter((i) => i >= 0), rng);
+    for (const si of lastIdx) if (risky.length) assign[si] = risky.shift();
+    free.push(...risky, ...rest);
+    for (let si = 0; si < assign.length; si++) if (assign[si] < 0) assign[si] = free.shift();
+    const unused = new Set(free);
 
-    for (const agent of shuffle(fill, rng)) {
-      const myTargets = new Set();
-      const myCats = new Set();
-      // difícil primeiro: é o nível mais escasso
-      for (const slot of [SLOTS[1], SLOTS[0], SLOTS[2]]) {
-        let choice = null;
-        let choiceCost = Infinity;
-        for (const m of shuffle(avail.filter((x) => x.level === slot.level && !taken.has(x.id)), rng)) {
-          if (agent.restricted && m.romantic) continue;
-          const tid = pickTarget(m, agent, everyone, load, myTargets, rng);
-          if (tid === undefined) continue;
-          const cost = (tid != null ? (load[tid] || 0) * 2 + (myTargets.has(tid) ? 6 : 0) : 0)
-            + (myCats.has(m.category) ? 3 : 0) + rng() * 1.5;
-          if (cost < choiceCost) { choice = { m, tid }; choiceCost = cost; }
-        }
-        if (!choice) { ok = false; break; }
-        const { m, tid } = choice;
-        taken.add(m.id);
-        if (tid != null) { load[tid] = (load[tid] || 0) + 1; myTargets.add(tid); }
-        if (myCats.has(m.category)) dupCats++;
-        myCats.add(m.category);
-        effortOf.set(agent.id, (effortOf.get(agent.id) || 0) + (m.effort || 2));
-        picks.push({ participantId: agent.id, missionId: m.id, targetId: tid, position: slot.position, level: m.level });
+    let cur = evaluate(assign);
+    for (let it = 0; it < iterations; it++) {
+      const temp = 3 * (1 - it / iterations) + 0.01;
+      const i = Math.floor(rng() * assign.length);
+      let undo;
+      if (unused.size && rng() < 0.35) {
+        const pick = [...unused][Math.floor(rng() * unused.size)];
+        const old = assign[i];
+        assign[i] = pick; unused.delete(pick); unused.add(old);
+        undo = () => { assign[i] = old; unused.delete(old); unused.add(pick); };
+      } else {
+        const k = Math.floor(rng() * assign.length);
+        if (k === i) continue;
+        [assign[i], assign[k]] = [assign[k], assign[i]];
+        undo = () => { [assign[i], assign[k]] = [assign[k], assign[i]]; };
       }
-      if (!ok) break;
+      const next = evaluate(assign);
+      if (next.cost <= cur.cost || rng() < Math.exp((cur.cost - next.cost) / temp)) cur = next;
+      else undo();
+      if (cur.violations === 0 && (!best || cur.score < best.score)) best = { assign: assign.slice(), score: cur.score };
     }
-    if (!ok) continue;
-
-    const score = variance([...effortOf.values()]) * 3
-      + variance(everyone.map((p) => load[p.id] || 0)) * 2
-      + dupCats * 0.5;
-    if (!best || score < best.score) best = { picks, score };
   }
   if (!best) {
-    throw new DrawError('Não foi possível sortear respeitando as regras (restrições românticas, alvos fixos). Cadastre mais missões.');
+    throw new DrawError('Não foi possível sortear respeitando as regras (alvos fixos, restrições de flerte, desafios de 5 pontos só no último dia). Cadastre mais desafios.');
   }
-  return best;
+
+  // alvos sorteados: distribui entre todos, nunca o dono, evitando repetir para o mesmo agente
+  const load = fixedLoad(best.assign);
+  const mine = new Map();
+  const picks = shuffle(best.assign.map((mi, si) => ({ mi, si })), rng).map(({ mi, si }) => {
+    const { p, day } = slots[si];
+    const m = pool[mi];
+    const avoid = mine.get(p.id) || new Set();
+    const tid = pickTarget(m, p, everyone, load, avoid, rng);
+    if (tid === undefined) throw new DrawError('Não há alvo possível para um dos desafios. Cadastre mais agentes.');
+    if (tid != null) {
+      if (m.target === '*') load[tid] = (load[tid] || 0) + 1;
+      mine.set(p.id, avoid.add(tid));
+    }
+    return { participantId: p.id, missionId: m.id, targetId: tid, position: day, points: m.points };
+  });
+  return { picks, score: best.score };
 }

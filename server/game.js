@@ -2,8 +2,11 @@ import fs from 'node:fs';
 import path from 'node:path';
 import { tx, now } from './db.js';
 import { normalize, encrypt, decrypt, hashPassword, generatePassword, normalizePassword } from './security.js';
-import { drawMissions, pickTarget, shuffle, DrawError } from './draw.js';
+import { drawMissions, pickTarget, shuffle, dayAllowed, DrawError } from './draw.js';
 import { HttpError } from './http.js';
+
+/** Até que dia os desafios estão liberados para os agentes (tudo aberto depois do encerramento). */
+export const visibleDay = (game) => (game.status === 'finished' ? 3 : game.status === 'active' ? game.unlocked_day : 0);
 
 export const currentGame = (db) => db.prepare('SELECT * FROM games ORDER BY id DESC LIMIT 1').get() || null;
 
@@ -18,7 +21,11 @@ export const participantsOf = (db, gameId) =>
 
 export const label = (p) => (p ? (p.nickname ? `${p.name} (${p.nickname})` : p.name) : null);
 
-export const missionPoints = (m, game) => m.points ?? (m.level === 'dificil' ? game.points_dificil : game.points_medio);
+export const missionPoints = (m) => m.points;
+
+export const LOST = ['flagrante', 'passe'];
+export const PASSES_PER_AGENT = 2;
+export const TARGET_TOKEN = /\[ALVO\]|\{alvo\}/gi;
 
 export function logEvent(db, game, { type, participant = null, assignmentId = null, missionTitle = null, points = null, detail = null }) {
   db.prepare(`INSERT INTO events (game_id, ts, type, participant_id, participant_name, assignment_id, mission_title, points, detail)
@@ -32,11 +39,11 @@ export function assignmentView(row, game) {
   return {
     id: row.id,
     number: row.position,
+    day: row.position,
     title: row.title,
-    description: row.description.replaceAll('{alvo}', target),
-    level: row.level,
+    description: row.description.replace(TARGET_TOKEN, target),
     category: row.category,
-    points: row.points_awarded ?? missionPoints(row, game),
+    points: row.points_awarded ?? missionPoints(row),
     status: row.status,
     submittedAt: row.submitted_at,
     confirmedAt: row.confirmed_at,
@@ -47,7 +54,7 @@ export function assignmentView(row, game) {
 }
 
 const ASSIGN_SQL = `
-  SELECT a.*, m.title, m.description, m.level, m.category, m.points, m.romantic, m.target AS mission_target,
+  SELECT a.*, m.title, m.description, m.category, m.points, m.romantic, m.target AS mission_target,
          CASE WHEN t.id IS NULL THEN NULL
               WHEN t.nickname IS NULL OR t.nickname = '' THEN t.name
               ELSE t.name || ' (' || t.nickname || ')' END AS target_label
@@ -65,18 +72,26 @@ export const assignmentsOfGame = (db, gameId) =>
 export function computeStats(db, game) {
   const people = participantsOf(db, game.id);
   const rows = assignmentsOfGame(db, game.id);
+  const adj = new Map();
+  for (const a of db.prepare('SELECT participant_id, SUM(points) AS n FROM adjustments WHERE game_id = ? GROUP BY participant_id').all(game.id)) adj.set(a.participant_id, a.n);
   const stats = people.map((p) => {
     const mine = rows.filter((r) => r.participant_id === p.id);
     const done = mine.filter((r) => r.status === 'concluida');
+    const lost = mine.filter((r) => LOST.includes(r.status));
+    const passes = mine.filter((r) => r.status === 'passe').length;
     return {
       id: p.id,
       name: p.name,
       nickname: p.nickname,
-      points: done.reduce((s, r) => s + (r.points_awarded ?? missionPoints(r, game)), 0),
+      points: done.reduce((s, r) => s + (r.points_awarded ?? missionPoints(r)), 0) + (adj.get(p.id) || 0),
+      adjustments: adj.get(p.id) || 0,
       done: done.length,
       inReview: mine.filter((r) => r.status === 'analise').length,
+      lost: lost.length,
+      passesUsed: passes,
+      passesLeft: Math.max(0, PASSES_PER_AGENT - passes),
       total: mine.length,
-      remaining: mine.length - done.length,
+      remaining: mine.length - done.length - lost.length,
       percent: mine.length ? Math.round((done.length / mine.length) * 100) : 0,
       lastDoneAt: done.map((r) => r.confirmed_at).sort().at(-1) || null,
     };
@@ -93,8 +108,8 @@ export function computeStats(db, game) {
 
 /** Ranking público: nada que revele papéis, missões ou análises pendentes dos outros. */
 export const publicRanking = (db, game) =>
-  computeStats(db, game).map(({ position, id, name, nickname, points, done, remaining, total, percent }) =>
-    ({ position, id, name, nickname, points, done, remaining, total, percent }));
+  computeStats(db, game).map(({ position, id, name, nickname, points, done, remaining, lost, total, percent }) =>
+    ({ position, id, name, nickname, points, done, remaining, lost, total, percent }));
 
 // ---- participantes -------------------------------------------------------------
 export function sanitizeName(raw) {
@@ -177,6 +192,7 @@ function assertSetup(game, what) {
 
 export function drawDouble(db, game) {
   assertSetup(game, 'Agente Duplo');
+  if (!game.double_enabled) throw new HttpError(409, 'O Agente Duplo está desativado nesta partida.');
   const people = participantsOf(db, game.id);
   if (people.length < 3) throw new HttpError(409, 'São necessários pelo menos 3 agentes.');
   const chosen = shuffle(people)[0];
@@ -215,12 +231,15 @@ export function fillNewcomer(db, game, participantId) {
   const me = people.find((p) => p.id === participantId);
   const used = new Set(db.prepare('SELECT mission_id FROM assignments WHERE game_id = ?').all(game.id).map((r) => r.mission_id));
   try {
+    const baseTotals = {};
+    for (const r of assignmentsOfGame(db, game.id)) baseTotals[r.participant_id] = (baseTotals[r.participant_id] || 0) + r.points;
     const { picks } = drawMissions({
       fill: [{ id: me.id, restricted: !!me.restricted_romantic }],
       everyone: people,
       missions: resolveCatalog(db, people),
       used,
       targetLoad: targetLoadOf(db, game.id),
+      baseTotals,
     });
     insertPicks(db, game, people, picks);
     logEvent(db, game, { type: 'missoes_novo_agente', participant: me });
@@ -230,29 +249,33 @@ export function fillNewcomer(db, game, participantId) {
   }
 }
 
-/** Troca a missão de uma atribuição (a pedido do admin, ou ao reparar alvo removido). */
+/** Troca o desafio de uma atribuição (a pedido do admin, ou ao reparar alvo removido), mantendo pontuação parecida. */
 export function swapAssignment(db, dataDir, game, assignmentId, wantedMissionId = null) {
-  const a = db.prepare('SELECT * FROM assignments WHERE id = ? AND game_id = ?').get(assignmentId, game.id);
+  const a = db.prepare('SELECT a.*, m.points AS cur_points FROM assignments a JOIN missions m ON m.id = a.mission_id WHERE a.id = ? AND a.game_id = ?').get(assignmentId, game.id);
   if (!a) throw new HttpError(404, 'Missão não encontrada.');
   const people = participantsOf(db, game.id);
   const me = people.find((p) => p.id === a.participant_id);
-  const current = db.prepare('SELECT level FROM missions WHERE id = ?').get(a.mission_id);
   const used = new Set(db.prepare('SELECT mission_id FROM assignments WHERE game_id = ? AND id != ?').all(game.id, a.id).map((r) => r.mission_id));
   const load = targetLoadOf(db, game.id);
-  const catalog = resolveCatalog(db, people).filter((m) => !used.has(m.id) && m.id !== a.mission_id);
+  const ok = (m) => !used.has(m.id) && m.id !== a.mission_id && dayAllowed(m, a.position) && !(me.restricted_romantic && m.romantic) && m.target !== me.id;
+  const catalog = resolveCatalog(db, people).filter(ok);
 
-  let pool = catalog.filter((m) => m.level === current.level && !(me.restricted_romantic && m.romantic) && m.target !== me.id);
+  let pool;
   if (wantedMissionId) {
-    pool = catalog.filter((m) => m.id === wantedMissionId && !(me.restricted_romantic && m.romantic) && m.target !== me.id);
-    if (!pool.length) throw new HttpError(409, 'Essa missão não pode ser atribuída a este agente.');
+    pool = catalog.filter((m) => m.id === wantedMissionId);
+    if (!pool.length) throw new HttpError(409, 'Esse desafio não pode ser atribuído a este agente neste dia.');
+  } else {
+    const dist = (m) => Math.abs(m.points - a.cur_points);
+    const min = Math.min(...catalog.map(dist));
+    pool = catalog.filter((m) => dist(m) === min);
   }
-  if (!pool.length) throw new HttpError(409, 'Não há missão disponível no catálogo para a troca.');
+  if (!pool.length) throw new HttpError(409, 'Não há desafio disponível no catálogo para a troca.');
   const m = shuffle(pool)[0];
   const tid = pickTarget(m, me, people, load);
   tx(db, () => {
     deleteEvidenceFiles(db, dataDir, 'id = ?', a.id);
     db.prepare(`UPDATE assignments SET mission_id = ?, target_id = ?, target_name = ?, status = 'pendente', submitted_at = NULL,
-                confirmed_at = NULL, note = NULL, evidence_file = NULL, points_awarded = NULL WHERE id = ?`)
+                confirmed_at = NULL, note = NULL, evidence_file = NULL, review_message = NULL, points_awarded = NULL WHERE id = ?`)
       .run(m.id, tid ?? null, tid ? label(people.find((p) => p.id === tid)) : null, a.id);
     logEvent(db, game, { type: 'troca', participant: me, assignmentId: a.id, missionTitle: m.title });
   });
@@ -282,7 +305,7 @@ export function removeParticipant(db, dataDir, game, p) {
 export function startGame(db, game) {
   if (game.status !== 'setup') throw new HttpError(409, 'A operação já foi iniciada.');
   const people = participantsOf(db, game.id);
-  if (!game.double_agent_id) throw new HttpError(409, 'Sorteie o Agente Duplo antes de iniciar.');
+  if (game.double_enabled && !game.double_agent_id) throw new HttpError(409, 'Sorteie o Agente Duplo antes de iniciar.');
   const counts = db.prepare('SELECT participant_id, COUNT(*) AS n FROM assignments WHERE game_id = ? GROUP BY participant_id').all(game.id);
   const byId = new Map(counts.map((c) => [c.participant_id, c.n]));
   const orphans = db.prepare(`SELECT COUNT(*) AS n FROM assignments a JOIN missions m ON m.id = a.mission_id
@@ -290,6 +313,6 @@ export function startGame(db, game) {
   if (!people.length || people.some((p) => byId.get(p.id) !== 3) || orphans) {
     throw new HttpError(409, 'Sorteie as missões novamente: a lista de agentes mudou depois do sorteio.');
   }
-  db.prepare("UPDATE games SET status = 'active', started_at = ? WHERE id = ?").run(now(), game.id);
+  db.prepare("UPDATE games SET status = 'active', started_at = ?, unlocked_day = 1 WHERE id = ?").run(now(), game.id);
   logEvent(db, game, { type: 'inicio' });
 }

@@ -13,11 +13,14 @@ export const CATEGORIES = ['infiltracao', 'social', 'foto', 'humor', 'bebida', '
 function cleanMission(b, { partial = false } = {}) {
   const out = {};
   const has = (k) => b[k] !== undefined;
-  if (!partial || has('title')) out.title = str(b.title, 'Nome da missão', { max: 80 });
+  if (!partial || has('title')) out.title = str(b.title, 'Nome do desafio', { max: 80 });
   if (!partial || has('description')) out.description = str(b.description, 'Descrição', { max: 800 });
-  if (!partial || has('level')) {
-    if (!['medio', 'dificil'].includes(b.level)) throw new HttpError(400, 'Nível deve ser medio ou dificil.');
-    out.level = b.level;
+  if (!partial || has('points') || has('level')) {
+    // aceita o formato antigo (level) para listas importadas da 1ª versão
+    const raw = b.points ?? (b.level === 'dificil' ? 3 : b.level === 'medio' ? 2 : 2);
+    const n = Number(raw);
+    if (!Number.isInteger(n) || n < 1 || n > 100) throw new HttpError(400, 'Pontos deve ser um inteiro de 1 a 100 (ex.: 1, 2, 3, 5).');
+    out.points = n;
   }
   if (!partial || has('category')) {
     const c = b.category || 'social';
@@ -26,28 +29,9 @@ function cleanMission(b, { partial = false } = {}) {
   }
   if (!partial || has('target')) out.target = str(b.target, 'Alvo', { max: 60, required: false }) || null;
   if (!partial || has('romantic')) out.romantic = b.romantic ? 1 : 0;
-  if (!partial || has('effort')) {
-    const e = Number(b.effort ?? 2);
-    if (![1, 2, 3].includes(e)) throw new HttpError(400, 'Esforço deve ser 1, 2 ou 3.');
-    out.effort = e;
-  }
-  if (!partial || has('points')) {
-    if (b.points === null || b.points === '' || b.points === undefined) out.points = null;
-    else {
-      const n = Number(b.points);
-      if (!Number.isInteger(n) || n < 0 || n > 100000) throw new HttpError(400, 'Pontos inválidos.');
-      out.points = n;
-    }
-  }
   if (has('active')) out.active = b.active ? 1 : 0;
   return out;
 }
-
-const pointsOf = (v, name) => {
-  const n = Number(v);
-  if (!Number.isInteger(n) || n < 0 || n > 100000) throw new HttpError(400, `${name} inválido.`);
-  return n;
-};
 
 export function adminRoutes(router, app) {
   const { db, cfg, key } = app;
@@ -59,8 +43,8 @@ export function adminRoutes(router, app) {
     return p;
   };
   const gameInfo = (g) => ({
-    id: g.id, name: g.name, status: g.status, pointsMedio: g.points_medio, pointsDificil: g.points_dificil,
-    autoConfirm: !!g.auto_confirm, startedAt: g.started_at, finishedAt: g.finished_at,
+    id: g.id, name: g.name, status: g.status, unlockedDay: g.unlocked_day, doubleEnabled: !!g.double_enabled,
+    startDate: g.start_date, autoConfirm: !!g.auto_confirm, startedAt: g.started_at, finishedAt: g.finished_at,
     missionsDrawnAt: g.missions_drawn_at, doubleDrawnAt: g.double_drawn_at,
   });
 
@@ -73,14 +57,22 @@ export function adminRoutes(router, app) {
     const participants = people.map((p) => ({
       id: p.id, name: p.name, nickname: p.nickname, restrictedRomantic: !!p.restricted_romantic,
       password: revealPassword(key, p),
-      isDouble: g.double_agent_id === p.id,
+      isDouble: !!g.double_enabled && g.double_agent_id === p.id,
       stats: stats.find((s) => s.id === p.id),
       missions: rows.filter((r) => r.participant_id === p.id).map((r) => ({
         ...assignmentView(r, g), missionId: r.mission_id, targetLabel: r.target_label || r.target_name, romantic: !!r.romantic,
       })),
     }));
-    const double = people.find((p) => p.id === g.double_agent_id);
+    const double = g.double_enabled ? people.find((p) => p.id === g.double_agent_id) : null;
+    const flagrantes = db.prepare("SELECT * FROM flagrantes WHERE game_id = ? AND status = 'pendente' ORDER BY id").all(g.id).map((f) => ({
+      id: f.id, guess: f.guess, createdAt: f.created_at,
+      accuserId: f.accuser_id, accuserName: people.find((p) => p.id === f.accuser_id)?.name,
+      accusedId: f.accused_id, accusedName: people.find((p) => p.id === f.accused_id)?.name,
+      candidates: participants.find((p) => p.id === f.accused_id)?.missions.filter((m) => ['pendente', 'analise'].includes(m.status)) || [],
+    }));
     return {
+      flagrantes,
+      adjustments: db.prepare('SELECT a.*, p.name FROM adjustments a JOIN participants p ON p.id = a.participant_id WHERE a.game_id = ? ORDER BY a.id DESC LIMIT 50').all(g.id),
       game: gameInfo(g),
       doubleAgent: double ? { id: double.id, name: double.name } : null,
       participants,
@@ -97,8 +89,8 @@ export function adminRoutes(router, app) {
     const prev = currentGame(db);
     const id = tx(db, () => {
       if (prev && prev.status !== 'finished') db.prepare("UPDATE games SET status = 'finished', finished_at = ? WHERE id = ?").run(now(), prev.id);
-      const r = db.prepare('INSERT INTO games (name, points_medio, points_dificil, auto_confirm, created_at) VALUES (?,?,?,?,?)')
-        .run(name, prev?.points_medio ?? 100, prev?.points_dificil ?? 200, prev?.auto_confirm ?? 0, now());
+      const r = db.prepare('INSERT INTO games (name, auto_confirm, double_enabled, start_date, created_at) VALUES (?,?,?,?,?)')
+        .run(name, prev?.auto_confirm ?? 0, prev?.double_enabled ?? 0, ctx.body.startDate || null, now());
       const gid = Number(r.lastInsertRowid);
       if (prev && ctx.body.copyParticipants) {
         const ins = db.prepare(`INSERT INTO participants (game_id, name, nickname, pw_hash, pw_enc, restricted_romantic, created_at)
@@ -114,13 +106,69 @@ export function adminRoutes(router, app) {
   admin('/api/admin/game', 'PATCH', (ctx) => {
     const g = game();
     const b = ctx.body;
-    db.prepare('UPDATE games SET name = ?, points_medio = ?, points_dificil = ?, auto_confirm = ? WHERE id = ?').run(
+    if (b.doubleEnabled !== undefined && !!b.doubleEnabled !== !!g.double_enabled && g.status !== 'setup') {
+      throw new HttpError(409, 'O Agente Duplo só pode ser ligado ou desligado antes de iniciar a operação.');
+    }
+    let start = g.start_date;
+    if (b.startDate !== undefined) {
+      start = b.startDate ? String(b.startDate) : null;
+      if (start && !/^\d{4}-\d{2}-\d{2}$/.test(start)) throw new HttpError(400, 'Data inválida (use AAAA-MM-DD).');
+    }
+    const double = b.doubleEnabled !== undefined ? (b.doubleEnabled ? 1 : 0) : g.double_enabled;
+    db.prepare('UPDATE games SET name = ?, auto_confirm = ?, double_enabled = ?, double_agent_id = ?, start_date = ? WHERE id = ?').run(
       b.name !== undefined ? str(b.name, 'Nome', { max: 60 }) : g.name,
-      b.pointsMedio !== undefined ? pointsOf(b.pointsMedio, 'Pontos (média)') : g.points_medio,
-      b.pointsDificil !== undefined ? pointsOf(b.pointsDificil, 'Pontos (difícil)') : g.points_dificil,
       b.autoConfirm !== undefined ? (b.autoConfirm ? 1 : 0) : g.auto_confirm,
-      g.id,
+      double, double ? g.double_agent_id : null, start, g.id,
     );
+    return { ok: true };
+  });
+
+  // Libera os desafios de um dia (1 = sexta, 2 = sábado, 3 = domingo).
+  admin('/api/admin/day', 'POST', (ctx) => {
+    const g = game();
+    if (g.status !== 'active') throw new HttpError(409, 'A operação não está em andamento.');
+    const day = int(ctx.body.day, 'dia');
+    if (day > 3) throw new HttpError(400, 'Dia inválido (1 a 3).');
+    db.prepare('UPDATE games SET unlocked_day = ? WHERE id = ?').run(day, g.id);
+    logEvent(db, g, { type: 'dia_liberado', detail: `dia ${day}` });
+    return { ok: true };
+  });
+
+  // Flagrante aceito: o desafio descoberto é perdido pelo dono e quem descobriu ganha 1 ponto.
+  admin('/api/admin/flagrantes/:id/accept', 'POST', (ctx) => {
+    const g = game();
+    const f = db.prepare("SELECT * FROM flagrantes WHERE id = ? AND game_id = ? AND status = 'pendente'").get(int(ctx.params.id), g.id);
+    if (!f) throw new HttpError(404, 'Flagrante não encontrado.');
+    const a = assignment(g, int(ctx.body.assignmentId, 'assignmentId'));
+    if (a.participant_id !== f.accused_id) throw new HttpError(400, 'Esse desafio não é do acusado.');
+    if (!['pendente', 'analise'].includes(a.status)) throw new HttpError(409, 'Esse desafio já foi concluído ou encerrado.');
+    tx(db, () => {
+      removeEvidence(cfg, a.evidence_file);
+      db.prepare("UPDATE assignments SET status = 'flagrante', evidence_file = NULL, submitted_at = NULL, points_awarded = 0 WHERE id = ?").run(a.id);
+      db.prepare("UPDATE flagrantes SET status = 'aceito' WHERE id = ?").run(f.id);
+      db.prepare('INSERT INTO adjustments (game_id, participant_id, points, reason, created_at) VALUES (?,?,?,?,?)')
+        .run(g.id, f.accuser_id, 1, `Flagrante: ${a.title}`, now());
+      logEvent(db, g, { type: 'flagrante', participant: db.prepare('SELECT * FROM participants WHERE id = ?').get(f.accuser_id), assignmentId: a.id, missionTitle: a.title, points: 1 });
+    });
+    return { ok: true };
+  });
+
+  admin('/api/admin/flagrantes/:id/reject', 'POST', (ctx) => {
+    const g = game();
+    const r = db.prepare("UPDATE flagrantes SET status = 'recusado' WHERE id = ? AND game_id = ? AND status = 'pendente'").run(int(ctx.params.id), g.id);
+    if (!r.changes) throw new HttpError(404, 'Flagrante não encontrado.');
+    return { ok: true };
+  });
+
+  // Ajuste manual de pontos (ex.: fuga sem ficha de passe = -1).
+  admin('/api/admin/participants/:id/adjust', 'POST', (ctx) => {
+    const g = game();
+    const p = person(g.id, int(ctx.params.id));
+    const pts = Number(ctx.body.points);
+    if (!Number.isInteger(pts) || pts === 0 || Math.abs(pts) > 20) throw new HttpError(400, 'Pontos deve ser um inteiro entre -20 e 20 (diferente de 0).');
+    const reason = str(ctx.body.reason, 'Motivo', { max: 120 });
+    db.prepare('INSERT INTO adjustments (game_id, participant_id, points, reason, created_at) VALUES (?,?,?,?,?)').run(g.id, p.id, pts, reason, now());
+    logEvent(db, g, { type: 'ajuste', participant: p, points: pts, detail: reason });
     return { ok: true };
   });
 
@@ -128,8 +176,8 @@ export function adminRoutes(router, app) {
   admin('/api/admin/draw/missions', 'POST', () => ({ count: drawAllMissions(db, cfg.dataDir, game()) }));
   admin('/api/admin/draw/all', 'POST', () => {
     const g = game();
-    const p = drawDouble(db, g);
-    return { double: p.name, count: drawAllMissions(db, cfg.dataDir, g) };
+    const p = g.double_enabled ? drawDouble(db, g) : null;
+    return { double: p?.name ?? null, count: drawAllMissions(db, cfg.dataDir, g) };
   });
   admin('/api/admin/start', 'POST', () => { startGame(db, game()); return { ok: true }; });
   admin('/api/admin/finish', 'POST', () => {
@@ -190,7 +238,7 @@ export function adminRoutes(router, app) {
 
   // ---- missões da partida ----------------------------------------------------------------
   const assignment = (g, id) => {
-    const a = db.prepare('SELECT a.*, m.title, m.level, m.points FROM assignments a JOIN missions m ON m.id = a.mission_id WHERE a.id = ? AND a.game_id = ?').get(id, g.id);
+    const a = db.prepare('SELECT a.*, m.title, m.points FROM assignments a JOIN missions m ON m.id = a.mission_id WHERE a.id = ? AND a.game_id = ?').get(id, g.id);
     if (!a) throw new HttpError(404, 'Missão não encontrada.');
     return a;
   };
@@ -200,7 +248,8 @@ export function adminRoutes(router, app) {
     const g = game();
     const a = assignment(g, int(ctx.params.id));
     if (a.status === 'concluida') throw new HttpError(409, 'Missão já concluída.');
-    const pts = missionPoints(a, g);
+    if (['flagrante', 'passe'].includes(a.status)) throw new HttpError(409, 'Desafio encerrado (passe ou flagrante). Resete antes para reabrir.');
+    const pts = missionPoints(a);
     db.prepare("UPDATE assignments SET status = 'concluida', confirmed_at = ?, points_awarded = ?, review_message = NULL WHERE id = ?").run(now(), pts, a.id);
     logEvent(db, g, { type: 'confirmada', participant: owner(a), assignmentId: a.id, missionTitle: a.title, points: pts });
     return { ok: true };
@@ -257,13 +306,13 @@ export function adminRoutes(router, app) {
     }
     return {
       categories: CATEGORIES,
-      missions: db.prepare('SELECT * FROM missions ORDER BY level DESC, id').all()
+      missions: db.prepare('SELECT * FROM missions ORDER BY points, id').all()
         .map((m) => ({ ...m, romantic: !!m.romantic, active: !!m.active, usedBy: used.get(m.id) || null })),
     };
   });
 
-  const insertMission = db.prepare(`INSERT INTO missions (title, description, level, category, target, romantic, effort, points, active, created_at)
-                                    VALUES (@title, @description, @level, @category, @target, @romantic, @effort, @points, @active, @created_at)`);
+  const insertMission = db.prepare(`INSERT INTO missions (title, description, points, category, target, romantic, active, created_at)
+                                    VALUES (@title, @description, @points, @category, @target, @romantic, @active, @created_at)`);
   admin('/api/admin/missions', 'POST', (ctx) => {
     const m = cleanMission(ctx.body);
     const r = insertMission.run({ active: 1, ...m, created_at: now() });

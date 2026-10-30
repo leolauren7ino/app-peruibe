@@ -18,8 +18,18 @@ export function h(tag, props = {}, ...kids) {
   return el;
 }
 
-export const LEVEL = { medio: { icon: '🟡', label: 'Média' }, dificil: { icon: '🔴', label: 'Difícil' } };
-export const STATUS = { pendente: '☐ Pendente', analise: '🔎 Em análise', concluida: '☑ Concluída' };
+const TIERS = { 1: ['🟢', 'Fácil'], 2: ['🟡', 'Médio'], 3: ['🔴', 'Difícil'], 5: ['☠️', 'Arriscado'] };
+/** Selo do desafio pela pontuação (1 fácil, 2 médio, 3 difícil, 5 arriscado). */
+export const tier = (points) => { const [icon, label] = TIERS[points] || ['⚪', 'Especial']; return { icon, label }; };
+export const STATUS = { pendente: '☐ Pendente', analise: '🔎 Em análise', concluida: '☑ Concluída', flagrante: '🚨 Flagrante', passe: '🎫 Passe' };
+
+/** "sexta, 30/10" a partir da data de início da partida (AAAA-MM-DD) e do número do dia (1 = primeiro). */
+export function dayLabel(startDate, day) {
+  if (!startDate) return `Dia ${day}`;
+  const d = new Date(`${startDate}T12:00:00`);
+  d.setDate(d.getDate() + day - 1);
+  return d.toLocaleDateString('pt-BR', { weekday: 'long', day: '2-digit', month: '2-digit' });
+}
 export const CATEGORY = {
   infiltracao: '🕵️ Infiltração', social: '💃 Social', foto: '📸 Fotográfica', humor: '😂 Humor',
   bebida: '🍻 Brinde', investigacao: '🧠 Investigação', atuacao: '🎭 Atuação', viagem: '🧭 Viagem',
@@ -99,6 +109,6 @@ export function rankingList(ranking, meId = null) {
     h('div', { class: 'nm' }, r.name, r.id === meId && h('span', { class: 'muted' }, ' (você)')),
     h('div', { class: 'pts' }, `${r.points} pts`),
     h('div', { class: 'bar' }, h('i', { style: `width:${r.percent}%` })),
-    h('div', { class: 'sub' }, `${r.done} concluídas · ${r.remaining} restantes · ${r.percent}%`),
+    h('div', { class: 'sub' }, `${r.done} concluídas · ${r.remaining} restantes${r.lost ? ` · ${r.lost} perdidas/passe` : ''} · ${r.percent}%`),
   )));
 }
