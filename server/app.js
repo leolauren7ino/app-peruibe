@@ -146,13 +146,24 @@ async function applySeedCredentials(app) {
 }
 
 /** Anúncio do Clássico (uma única vez; depois o admin controla: resultado, ocultar). */
+const CLASSICO_BODY = 'Vovô Slavic x Brunão se enfrentam no Uno. Quem ganhar controla o outro por todo o dia.';
+const CLASSICO_BODY_OLD = 'Vovô Slavic x Brunão se enfrentam em Super Feras. Quem ganhar controla o outro por todo o dia.';
+
 function seedAnnouncements(app) {
   const { db } = app;
-  if (db.prepare("SELECT 1 FROM settings WHERE key = 'classico_seeded'").get()) return;
-  db.prepare(`INSERT INTO announcements (kind, title, subtitle, body, left_name, right_name, left_image, right_image, created_at)
-              VALUES ('versus', 'O CLÁSSICO', 'SUPER FERAS', ?, 'Vovô Slavic', 'Brunão', 'classico-esquerda.jpg', 'classico-direita.jpg', ?)`)
-    .run('Vovô Slavic x Brunão se enfrentam em Super Feras. Quem ganhar controla o outro por todo o dia.', now());
-  db.prepare("INSERT INTO settings (key, value) VALUES ('classico_seeded', '1')").run();
+  if (!db.prepare("SELECT 1 FROM settings WHERE key = 'classico_seeded'").get()) {
+    db.prepare(`INSERT INTO announcements (kind, title, subtitle, body, left_name, right_name, left_image, right_image, created_at)
+                VALUES ('versus', 'O CLÁSSICO', 'UNO', ?, 'Vovô Slavic', 'Brunão', 'classico-esquerda.jpg', 'classico-direita.jpg', ?)`)
+      .run(CLASSICO_BODY, now());
+    db.prepare("INSERT INTO settings (key, value) VALUES ('classico_seeded', '1')").run();
+    db.prepare("INSERT INTO settings (key, value) VALUES ('classico_uno', '1')").run();
+    return;
+  }
+  // bancos que já tinham o anúncio com Super Feras: troca para Uno uma única vez, sem pisar em texto editado depois
+  if (db.prepare("SELECT 1 FROM settings WHERE key = 'classico_uno'").get()) return;
+  db.prepare("UPDATE announcements SET subtitle = 'UNO' WHERE title = 'O CLÁSSICO' AND subtitle = 'SUPER FERAS'").run();
+  db.prepare("UPDATE announcements SET body = ? WHERE title = 'O CLÁSSICO' AND body = ?").run(CLASSICO_BODY, CLASSICO_BODY_OLD);
+  db.prepare("INSERT INTO settings (key, value) VALUES ('classico_uno', '1')").run();
 }
 
 /** Primeira execução: partida com os 9 agentes, já sorteada (ainda não iniciada). Bancos antigos são atualizados. */
