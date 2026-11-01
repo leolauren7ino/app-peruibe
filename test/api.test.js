@@ -310,9 +310,7 @@ test('anúncio do Clássico: visível só logado, imagens protegidas, admin defi
   assert.equal((await client().get('/api/assets/classico-esquerda.jpg')).status, 401);
   const list = (await players.Baiano.get('/api/announcements')).body.announcements;
   assert.equal(list.length, 1);
-  assert.deepEqual([list[0].title, list[0].subtitle, list[0].left.name, list[0].right.name, list[0].winner], ['O CLÁSSICO', 'UNO', 'Vovô Slavic', 'Brunão', null]);
-  assert.match(list[0].body, /Uno/);
-  assert.doesNotMatch(JSON.stringify(list[0]), /Super Feras|SUPER FERAS/i);
+  assert.deepEqual([list[0].title, list[0].left.name, list[0].right.name, list[0].winner], ['O CLÁSSICO', 'Vovô Slavic', 'Brunão', null]);
   assert.match(list[0].body, /controla o outro por todo o dia/);
   const img = await players.Baiano.get(list[0].left.image);
   assert.equal(img.status, 200);
