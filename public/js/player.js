@@ -105,11 +105,19 @@ export function startPlayer(root, logout) {
       const note = h('textarea', { placeholder: 'Quem viu? Como foi? (opcional)', maxlength: 500 });
       const preview = h('div');
       let photo = null;
-      const file = h('input', { type: 'file', accept: 'image/*', class: 'hidden', onchange: async () => {
+      // a conversão da foto é assíncrona: guardamos a promessa e o envio espera por ela (senão a foto se perdia em silêncio)
+      let converting = null;
+      const file = h('input', { type: 'file', accept: 'image/*', class: 'hidden', onchange: () => {
         if (!file.files[0]) return;
-        try { photo = await imageToDataUrl(file.files[0]); preview.replaceChildren(h('img', { class: 'ev', src: photo, alt: 'prévia da evidência' })); } catch (e) { toast(e.message, 'err'); }
+        preview.replaceChildren(h('div', { class: 'muted mono', style: 'font-size:12px;margin-top:8px' }, '⏳ PREPARANDO A FOTO…'));
+        photo = null;
+        converting = imageToDataUrl(file.files[0])
+          .then((url) => { photo = url; preview.replaceChildren(h('img', { class: 'ev', src: photo, alt: 'prévia da evidência' })); })
+          .catch((e) => { preview.replaceChildren(); toast(e.message, 'err'); throw e; });
+        converting.catch(() => {});
       } });
       const send = h('button', { class: 'btn primary', onclick: () => busy(send, async () => {
+        if (converting) await converting; // lança se a foto falhou: não envia sem ela sem você saber
         const r = await post(`/api/me/missions/${m.id}/complete`, { note: note.value, photo });
         closeSheet();
         toast(r.status === 'concluida' ? '✅ Desafio concluído!' : '🔎 Avise o organizador: ele confirma', 'ok');

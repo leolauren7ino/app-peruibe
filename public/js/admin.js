@@ -87,6 +87,7 @@ export function startAdmin(root, logout) {
       g.doubleEnabled && h('div', { class: 'card red double-banner', style: 'margin-top:12px' }, h('small', {}, '🕵️‍♂️ AGENTE DUPLO · SÓ VOCÊ VÊ'),
         h('b', {}, d.doubleAgent ? d.doubleAgent.name : '— ainda não sorteado —')),
       h('div', { style: 'margin-top:12px' }), st.ann.map(announcementAdmin), ...controls,
+      h('button', { class: 'btn', onclick: evidenceGallery }, `📸 Ver todas as provas (${d.participants.reduce((n, p) => n + p.missions.filter((m) => m.hasEvidence).length, 0)})`),
       d.flagrantes.length > 0 && h('h2', {}, `🚨 Flagrantes (${d.flagrantes.length})`),
       d.flagrantes.map(flagranteCard),
       d.pending.length > 0 && h('h2', {}, `🔎 Em análise (${d.pending.length})`),
@@ -127,13 +128,33 @@ export function startAdmin(root, logout) {
       h('button', { class: 'btn', onclick: (e) => act(e.target, () => post(`/api/admin/flagrantes/${f.id}/reject`), 'Flagrante recusado') }, '✖ Recusar flagrante'));
   }
 
+  /** Miniatura da prova; toque amplia. Se o arquivo sumiu (ex.: servidor reiniciou), avisa em vez de mostrar imagem quebrada. */
+  function evidenceThumb(m) {
+    const src = `/api/admin/assignments/${m.id}/evidence`;
+    const img = h('img', { class: 'ev-thumb', src, alt: 'evidência', loading: 'lazy',
+      onclick: () => sheet(m.title, h('img', { class: 'ev', src, alt: 'evidência' }), m.note && h('p', {}, `💬 ${m.note}`), h('button', { class: 'btn', onclick: closeSheet }, 'Fechar')) });
+    img.addEventListener('error', () => img.replaceWith(h('div', { class: 'muted mono', style: 'font-size:12px' }, '📷 FOTO INDISPONÍVEL (arquivo perdido)')));
+    return img;
+  }
+
+  function evidenceGallery() {
+    const items = st.data.participants.flatMap((p) => p.missions.filter((m) => m.hasEvidence).map((m) => ({ p, m })));
+    sheet(`📸 Provas (${items.length})`,
+      items.length === 0 && h('div', { class: 'empty' }, 'NENHUMA FOTO ENVIADA'),
+      items.map(({ p, m }) => h('div', { class: 'mini' },
+        h('div', { class: 'row between' }, h('b', {}, p.name), statusChip(m.status)),
+        h('div', { class: 't' }, `${tier(m.points).icon} ${m.title}`),
+        m.note && h('div', { class: 'd' }, `💬 ${m.note}`),
+        evidenceThumb(m))),
+      h('button', { class: 'btn', onclick: closeSheet }, 'Fechar'));
+  }
+
   function pendingCard(m) {
     return h('div', { class: 'card' },
       h('div', { class: 'row between' }, h('b', {}, m.participantName), h('span', { class: 'chip' }, `${m.points} pt${m.points > 1 ? 's' : ''}`)),
       h('div', { class: 'mini' }, h('div', { class: 't' }, `${tier(m.points).icon} Desafio ${m.day} · ${m.title}`), h('div', { class: 'd' }, m.description),
         m.note && h('div', {}, `💬 ${m.note}`), h('div', { class: 'muted mono', style: 'font-size:11px' }, `Enviado ${fmtDate(m.submittedAt)}`)),
-      m.hasEvidence && h('img', { class: 'ev-thumb', src: `/api/admin/assignments/${m.id}/evidence`, alt: 'evidência', loading: 'lazy',
-        onclick: () => sheet(m.title, h('img', { class: 'ev', src: `/api/admin/assignments/${m.id}/evidence`, alt: 'evidência' }), h('button', { class: 'btn', onclick: closeSheet }, 'Fechar')) }),
+      m.hasEvidence && evidenceThumb(m),
       h('div', { class: 'row' },
         h('button', { class: 'btn primary', onclick: (e) => act(e.target, () => post(`/api/admin/assignments/${m.id}/confirm`), 'Confirmado') }, '✔ Confirmar'),
         h('button', { class: 'btn', onclick: () => {
@@ -167,6 +188,8 @@ export function startAdmin(root, logout) {
     return h('div', { class: 'mini' },
       h('div', { class: 'row between' }, h('span', { class: 't' }, `${tier(m.points).icon} Desafio ${m.day} · ${m.title}`), statusChip(m.status)),
       h('div', { class: 'd' }, m.description),
+      m.note && h('div', { class: 'd' }, `💬 ${m.note}`),
+      m.hasEvidence && evidenceThumb(m),
       h('div', { class: 'row' },
         !closed && m.status !== 'concluida' && h('button', { class: 'btn small primary', onclick: (e) => act(e.target, () => post(`/api/admin/assignments/${m.id}/confirm`), 'Confirmado') }, '✔ Confirmar'),
         m.status !== 'pendente' && h('button', { class: 'btn small', onclick: async (e) => { if (await confirmSheet(`Resetar "${m.title}" de ${p.name}? Apaga evidência e pontos.`, { ok: 'Resetar', danger: true })) act(e.target, () => post(`/api/admin/assignments/${m.id}/reset`), 'Desafio resetado'); } }, '♻ Resetar'),
